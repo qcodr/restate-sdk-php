@@ -7,7 +7,7 @@
 INGRESS_URL ?= http://localhost:8080
 ADMIN_URL   ?= http://localhost:9070
 
-.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast check examples
+.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast infection check examples
 
 install:
 	composer install
@@ -37,6 +37,11 @@ cs-fix:
 # Offline SAST: Psalm taint analysis (untrusted input -> dangerous sinks).
 sast:
 	vendor/bin/psalm --taint-analysis --no-progress
+
+# Mutation testing (Infection): the share of injected faults the tests catch.
+# Needs a coverage driver (pcov/xdebug); fails below the thresholds in infection.json5.dist.
+infection:
+	vendor/bin/infection --threads=max --no-progress
 
 # The local pre-commit gate: lint + SAST + unit tests.
 check: lint sast test-unit

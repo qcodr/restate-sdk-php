@@ -1,0 +1,24 @@
+{
+    "$schema": "vendor/infection/infection/resources/schema.json",
+    "source": {
+        "directories": ["src"],
+        "excludes": [
+            // ext-swoole transport glue; exercised by the conformance suite, not units.
+            "Server/SwooleServer.php"
+        ]
+    },
+    "mutators": {
+        "@default": true
+    },
+    "testFramework": "phpunit",
+    "tmpDir": "build/infection",
+    // Floors sit below the ~81% covered-MSI baseline to gate regressions while
+    // tolerating run-to-run timing variance (timeouts) between local and CI.
+    "minMsi": 75,
+    "minCoveredMsi": 78,
+    "logs": {
+        "text": "build/infection/infection.log",
+        "html": "build/infection/infection.html",
+        "summary": "build/infection/summary.log"
+    }
+}
