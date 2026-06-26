@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol;
+namespace Qcodr\Restate\Sdk\Protocol;
 
 /**
  * The 16-bit message type codes of the Restate service protocol.

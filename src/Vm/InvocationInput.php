@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Vm;
+namespace Qcodr\Restate\Sdk\Vm;
 
-use Restate\Sdk\Protocol\Message\Header;
+use Qcodr\Restate\Sdk\Protocol\Message\Header;
 
 /**
  * The invocation envelope handed to user code at the start of a handler: the input

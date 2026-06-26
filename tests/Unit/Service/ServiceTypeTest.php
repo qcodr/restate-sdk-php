@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Service;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Service;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Service\ServiceType;
+use Qcodr\Restate\Sdk\Service\ServiceType;
 
 /**
  * The service kind drives whether the manifest advertises per-key state and a key:

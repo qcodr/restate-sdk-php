@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support\Fixtures;
+namespace Qcodr\Restate\Sdk\Tests\Support\Fixtures;
 
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Error\RetryableException;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Error\RetryableException;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
 
 /**
  * Fixture exercising durable-error tuning and cancellation: a handler that throws a

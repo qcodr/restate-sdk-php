@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 /**
  * Wall-clock source for computing absolute timer deadlines (sleep wake-up times,

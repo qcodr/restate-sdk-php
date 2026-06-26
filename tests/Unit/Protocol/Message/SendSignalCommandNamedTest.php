@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
+use Qcodr\Restate\Sdk\Protocol\Message\SendSignalCommand;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\WireType;
 use ReflectionClass;
-use Restate\Sdk\Protocol\Message\SendSignalCommand;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\Protobuf\WireType;
 
 final class SendSignalCommandNamedTest extends TestCase
 {

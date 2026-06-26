@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Server;
+namespace Qcodr\Restate\Sdk\Server;
 
 use Psr\Log\LoggerInterface;
-use Restate\Sdk\Context\Clock;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Context\Clock;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Serde\Serde;
 
 /**
  * Hosts a Restate {@see Endpoint} behind an AWS Lambda Function URL / API Gateway
@@ -32,8 +32,8 @@ use Restate\Sdk\Serde\Serde;
  *
  * ```php
  * // bootstrap.php (bref "function" runtime)
- * use Restate\Sdk\Endpoint\Endpoint;
- * use Restate\Sdk\Server\LambdaHandler;
+ * use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+ * use Qcodr\Restate\Sdk\Server\LambdaHandler;
  *
  * $endpoint = Endpoint::builder()->bind(new Greeter())->build();
  * $handler  = new LambdaHandler($endpoint);

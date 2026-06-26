@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\ContextRand;
+use Qcodr\Restate\Sdk\Context\ContextRand;
 
 final class ContextRandTest extends TestCase
 {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 use Closure;
 use Psr\Log\LoggerInterface;
@@ -18,7 +18,7 @@ use Stringable;
  * same lines on each replay. Gating on the state machine's processing phase keeps
  * the log free of replay noise.
  *
- * @see \Restate\Sdk\Vm\StateMachine::isProcessing()
+ * @see \Qcodr\Restate\Sdk\Vm\StateMachine::isProcessing()
  */
 final class ReplayAwareLogger implements LoggerInterface
 {

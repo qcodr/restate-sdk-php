@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service;
+namespace Qcodr\Restate\Sdk\Service;
 
 /**
  * What Restate does to an invocation once its retry policy exhausts the configured

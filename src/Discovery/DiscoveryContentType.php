@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Discovery;
+namespace Qcodr\Restate\Sdk\Discovery;
 
 /**
  * Negotiates the discovery manifest version from the runtime's `Accept` header.

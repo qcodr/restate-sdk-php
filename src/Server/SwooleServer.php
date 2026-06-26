@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Server;
+namespace Qcodr\Restate\Sdk\Server;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Restate\Sdk\Context\Clock;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\HttpResponse;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Context\Clock;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\HttpResponse;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Serde\Serde;
 use Swoole\Http\Request as SwooleRequest;
 use Swoole\Http\Response as SwooleResponse;
 use Swoole\Http\Server;

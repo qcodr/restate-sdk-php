@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 /**
  * `OneWayCallCommandMessage` (0x040E): fire-and-forget send to another handler,

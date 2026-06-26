@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Restate\Conformance;
 
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
 
 /**
  * Conformance list Virtual Object: a per-key list<string> kept under a single

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\MessageHeader;
-use Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\MessageHeader;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 
 final class MessageHeaderTruncatedTest extends TestCase
 {

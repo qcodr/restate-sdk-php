@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support\Fixtures;
+namespace Qcodr\Restate\Sdk\Tests\Support\Fixtures;
 
 /**
  * Nested DTO used by {@see SampleDto} to verify one level of schema recursion.

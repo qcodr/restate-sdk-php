@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Vm;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Vm;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Error\CancelledException;
-use Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Protocol\MessageHeader;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
-use Restate\Sdk\Protocol\ProtocolException;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Tests\Support\JournalBuilder;
-use Restate\Sdk\Vm\StateMachine;
-use Restate\Sdk\Vm\SuspendException;
-use Restate\Sdk\Vm\VmState;
+use Qcodr\Restate\Sdk\Error\CancelledException;
+use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Protocol\MessageHeader;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Vm\SuspendException;
+use Qcodr\Restate\Sdk\Vm\VmState;
 
 /**
  * Covers the state machine's error, lazy-state and lifecycle branches that the

@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Restate\Sdk\Context\Clock;
-use Restate\Sdk\Context\ContextRand;
-use Restate\Sdk\Context\RestateContext;
-use Restate\Sdk\Context\SystemClock;
-use Restate\Sdk\Error\RetryableException;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Protocol\ErrorBehavior;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Serde\JsonSerde;
-use Restate\Sdk\Serde\Serde;
-use Restate\Sdk\Service\HandlerDefinition;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Vm\StateMachine;
-use Restate\Sdk\Vm\SuspendException;
+use Qcodr\Restate\Sdk\Context\Clock;
+use Qcodr\Restate\Sdk\Context\ContextRand;
+use Qcodr\Restate\Sdk\Context\RestateContext;
+use Qcodr\Restate\Sdk\Context\SystemClock;
+use Qcodr\Restate\Sdk\Error\RetryableException;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Serde\JsonSerde;
+use Qcodr\Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Service\HandlerDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Vm\SuspendException;
 use Throwable;
 
 /**

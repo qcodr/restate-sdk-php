@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\Header;
-use Restate\Sdk\Protocol\Message\InputCommand;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\Message\Header;
+use Qcodr\Restate\Sdk\Protocol\Message\InputCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 final class InputCommandTest extends TestCase
 {

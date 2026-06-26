@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\StartMessage;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\Message\StartMessage;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 final class StartMessageDecodeSkipTest extends TestCase
 {

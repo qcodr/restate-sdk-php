@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\Protobuf\WireType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\WireType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 /**
  * Nested `Value { bytes content = 1 }`.

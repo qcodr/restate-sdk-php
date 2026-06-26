@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
 /**
  * A transport-agnostic view of an inbound HTTP request, so the

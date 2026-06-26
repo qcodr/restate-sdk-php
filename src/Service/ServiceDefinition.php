@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service;
+namespace Qcodr\Restate\Sdk\Service;
 
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionProperty;
 use ReflectionType;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\VirtualObject;
-use Restate\Sdk\Service\Attribute\Workflow;
 
 /**
  * A discovered service: its Restate name, type, the user instance handling

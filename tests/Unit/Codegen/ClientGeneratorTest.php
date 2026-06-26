@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Codegen;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Codegen;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Qcodr\Restate\Sdk\Codegen\ClientGenerator;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
 use ReflectionClass;
-use Restate\Sdk\Codegen\ClientGenerator;
-use Restate\Sdk\Tests\Support\Fixtures\Counter;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
 
 final class ClientGeneratorTest extends TestCase
 {
@@ -90,7 +90,7 @@ final class ClientGeneratorTest extends TestCase
 
     public function testGeneratedSourceEvaluatesIntoAUsableClass(): void
     {
-        $namespace = 'Restate\\Sdk\\Tests\\Tmp\\Gen' . \bin2hex(\random_bytes(6));
+        $namespace = 'Qcodr\\Restate\\Sdk\\Tests\\Tmp\\Gen' . \bin2hex(\random_bytes(6));
         $source = (new ClientGenerator($namespace))->generate(Counter::class);
 
         eval($this->stripPreambleForEval($source));

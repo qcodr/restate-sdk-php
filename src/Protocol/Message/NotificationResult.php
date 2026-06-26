@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
 /**
  * The result payload carried by a notification, mirroring the `result` oneof of

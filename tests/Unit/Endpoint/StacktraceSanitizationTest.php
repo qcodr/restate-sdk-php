@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Endpoint;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Tests\Support\Fixtures\ThrowingService;
-use Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\ThrowingService;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 use RuntimeException;
 
 /**

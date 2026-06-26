@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Serde;
+namespace Qcodr\Restate\Sdk\Serde;
 
 use RuntimeException;
 

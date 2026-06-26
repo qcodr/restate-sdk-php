@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint\Identity;
+namespace Qcodr\Restate\Sdk\Endpoint\Identity;
 
 use JsonException;
-use Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
 
 /**
  * Verifies that an inbound request was signed by a trusted Restate instance.

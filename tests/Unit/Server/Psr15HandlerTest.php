@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Server;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Server;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Server\Psr15Handler;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
-use Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Server\Psr15Handler;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 
 final class Psr15HandlerTest extends TestCase
 {

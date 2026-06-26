@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 
 final class ServiceProtocolVersionTest extends TestCase
 {

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Endpoint\Identity;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint\Identity;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
 
 /**
  * Branch coverage for {@see RequestIdentityVerifier}: malformed JWT structure, bad

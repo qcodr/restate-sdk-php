@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Error;
+namespace Qcodr\Restate\Sdk\Error;
 
 use RuntimeException;
 use Throwable;

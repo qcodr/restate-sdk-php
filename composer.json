@@ -24,18 +24,18 @@
         "vimeo/psalm": "^6.0"
     },
     "suggest": {
-        "ext-swoole": "Required to run the Swoole-based HTTP server (Restate\\Sdk\\Server\\SwooleServer).",
-        "ext-sodium": "Required for request identity verification (Restate\\Sdk\\Endpoint\\Identity).",
+        "ext-swoole": "Required to run the Swoole-based HTTP server (Qcodr\\Restate\\Sdk\\Server\\SwooleServer).",
+        "ext-sodium": "Required for request identity verification (Qcodr\\Restate\\Sdk\\Endpoint\\Identity).",
         "open-telemetry/sdk": "Bridge Context::traceContext() into OpenTelemetry spans (see examples/tracing.php)."
     },
     "autoload": {
         "psr-4": {
-            "Restate\\Sdk\\": "src/"
+            "Qcodr\\Restate\\Sdk\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Restate\\Sdk\\Tests\\": "tests/"
+            "Qcodr\\Restate\\Sdk\\Tests\\": "tests/"
         }
     },
     "bin": ["bin/restate-serve", "bin/restate-codegen"],

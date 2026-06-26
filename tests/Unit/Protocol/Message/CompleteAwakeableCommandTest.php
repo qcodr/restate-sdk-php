@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\Protobuf\WireType;
+use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\WireType;
 
 final class CompleteAwakeableCommandTest extends TestCase
 {

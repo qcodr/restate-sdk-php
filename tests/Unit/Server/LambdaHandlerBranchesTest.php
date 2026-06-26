@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Server;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Server;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Server\LambdaHandler;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
-use Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Server\LambdaHandler;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 
 /**
  * Branch coverage for {@see LambdaHandler}'s event-extraction fallbacks: missing

@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Endpoint\Identity;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint\Identity;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Tests\Support\Fixtures\Counter;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
 
 final class RequestIdentityVerifierTest extends TestCase
 {

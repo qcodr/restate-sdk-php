@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
 
 final class MessageTypeTest extends TestCase
 {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol;
+namespace Qcodr\Restate\Sdk\Protocol;
 
 /**
  * Restate service protocol versions and their negotiation rules.

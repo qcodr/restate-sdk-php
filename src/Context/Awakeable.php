@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 /**
  * An awakeable: a durable callback handle. The {@see id} is handed to an external

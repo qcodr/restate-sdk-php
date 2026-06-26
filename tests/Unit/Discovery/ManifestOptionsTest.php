@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Discovery;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Discovery;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Discovery\ManifestBuilder;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Service\HandlerOptions;
-use Restate\Sdk\Service\RetryPolicyOnMaxAttempts;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceOptions;
-use Restate\Sdk\Tests\Support\Fixtures\Counter;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Discovery\ManifestBuilder;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Service\HandlerOptions;
+use Qcodr\Restate\Sdk\Service\RetryPolicyOnMaxAttempts;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceOptions;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
 
 final class ManifestOptionsTest extends TestCase
 {

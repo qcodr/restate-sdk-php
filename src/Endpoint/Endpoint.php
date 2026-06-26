@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
-use Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceOptions;
+use Qcodr\Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceOptions;
 
 /**
  * The immutable registry of services exposed by a deployment.

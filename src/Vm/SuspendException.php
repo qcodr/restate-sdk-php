@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Vm;
+namespace Qcodr\Restate\Sdk\Vm;
 
 use Exception;
 

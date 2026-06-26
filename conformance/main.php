@@ -15,6 +15,8 @@ declare(strict_types=1);
  * are shared across invocations within the process, as the contract requires.
  */
 
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Server\SwooleServer;
 use Restate\Conformance\AwakeableHolder;
 use Restate\Conformance\BlockAndWaitWorkflow;
 use Restate\Conformance\CancelTestBlockingService;
@@ -29,8 +31,6 @@ use Restate\Conformance\NonDeterministic;
 use Restate\Conformance\Proxy;
 use Restate\Conformance\TestUtilsService;
 use Restate\Conformance\VirtualObjectCommandInterpreter;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Server\SwooleServer;
 
 require __DIR__ . '/../vendor/autoload.php';
 

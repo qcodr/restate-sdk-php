@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Vm;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Vm;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Vm\AwakeableId;
+use Qcodr\Restate\Sdk\Vm\AwakeableId;
 
 /**
  * Verifies the public awakeable id encoding: the literal `prom_1` prefix followed by

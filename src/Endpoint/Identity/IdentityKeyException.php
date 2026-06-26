@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint\Identity;
+namespace Qcodr\Restate\Sdk\Endpoint\Identity;
 
 use InvalidArgumentException;
 

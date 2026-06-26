@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\TraceContext;
+use Qcodr\Restate\Sdk\Context\TraceContext;
 
 /**
  * Verifies W3C trace-context parsing from request headers: a well-formed

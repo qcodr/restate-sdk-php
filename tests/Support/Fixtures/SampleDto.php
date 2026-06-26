@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support\Fixtures;
+namespace Qcodr\Restate\Sdk\Tests\Support\Fixtures;
 
 /**
- * A small DTO exercising the {@see \Restate\Sdk\Discovery\JsonSchemaGenerator}:
+ * A small DTO exercising the {@see \Qcodr\Restate\Sdk\Discovery\JsonSchemaGenerator}:
  * required scalars, a nullable-and-defaulted property, a defaulted property, and a
  * nested object that should recurse one level.
  */

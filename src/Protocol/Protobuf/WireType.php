@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Protobuf;
+namespace Qcodr\Restate\Sdk\Protocol\Protobuf;
 
 /**
  * Protobuf wire types as defined by the protobuf binary encoding.

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
 
 /**
  * `InputCommandMessage` (0x0400): the first journal entry, carrying the invocation

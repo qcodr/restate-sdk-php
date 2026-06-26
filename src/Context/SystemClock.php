@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 /**
  * Default {@see Clock} backed by the system wall clock.

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 /**
  * The context for exclusive (single-writer) Virtual Object handlers. Adds state

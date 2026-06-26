@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Server;
+namespace Qcodr\Restate\Sdk\Server;
 
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -10,11 +10,11 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
-use Restate\Sdk\Context\Clock;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Context\Clock;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Serde\Serde;
 
 /**
  * Hosts a Restate {@see Endpoint} inside any PSR-15 middleware stack (Slim, Mezzio,
@@ -22,7 +22,7 @@ use Restate\Sdk\Serde\Serde;
  *
  * The handler adapts an incoming PSR-7 {@see ServerRequestInterface} onto the
  * framework-agnostic {@see RequestProcessor} and renders the resulting
- * {@see \Restate\Sdk\Endpoint\HttpResponse} back into a PSR-7 response built from the
+ * {@see \Qcodr\Restate\Sdk\Endpoint\HttpResponse} back into a PSR-7 response built from the
  * supplied factories. All protocol behavior lives in the processor; this class only
  * bridges the message types, so the same endpoint runs identically here and under
  * {@see SwooleServer}.

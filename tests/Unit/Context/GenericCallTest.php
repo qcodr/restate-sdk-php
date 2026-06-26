@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 
 /**
  * Covers the raw (serde-bypassing) call primitives: {@see Context::genericCall} returns

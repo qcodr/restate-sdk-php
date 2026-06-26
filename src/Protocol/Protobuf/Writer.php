@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Protobuf;
+namespace Qcodr\Restate\Sdk\Protocol\Protobuf;
 
 /**
  * Minimal proto3 binary encoder.

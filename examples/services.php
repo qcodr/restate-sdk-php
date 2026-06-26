@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Restate\Examples;
 
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Context\SharedObjectContext;
-use Restate\Sdk\Context\SharedWorkflowContext;
-use Restate\Sdk\Context\WorkflowContext;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\VirtualObject;
-use Restate\Sdk\Service\Attribute\Workflow;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Context\SharedObjectContext;
+use Qcodr\Restate\Sdk\Context\SharedWorkflowContext;
+use Qcodr\Restate\Sdk\Context\WorkflowContext;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
 
 require __DIR__ . '/../vendor/autoload.php';
 

@@ -54,8 +54,8 @@ composer require qcodr/restate-sdk-php
 Define services with attributes; the first parameter is always the context.
 
 ```php
-use Restate\Sdk\Context\{Context, ObjectContext, SharedObjectContext};
-use Restate\Sdk\Service\Attribute\{Service, VirtualObject, Handler, Shared};
+use Qcodr\Restate\Sdk\Context\{Context, ObjectContext, SharedObjectContext};
+use Qcodr\Restate\Sdk\Service\Attribute\{Service, VirtualObject, Handler, Shared};
 
 #[Service]
 final class Greeter
@@ -89,8 +89,8 @@ final class Counter
 Serve them:
 
 ```php
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Server\SwooleServer;
 
 $endpoint = Endpoint::builder()
     ->bind(new Greeter())
@@ -111,8 +111,8 @@ curl localhost:8080/Counter/acme/add   -d '5'         # 5
 ## Workflows & durable promises
 
 ```php
-use Restate\Sdk\Context\{WorkflowContext, SharedWorkflowContext};
-use Restate\Sdk\Service\Attribute\{Workflow, Handler, Shared};
+use Qcodr\Restate\Sdk\Context\{WorkflowContext, SharedWorkflowContext};
+use Qcodr\Restate\Sdk\Service\Attribute\{Workflow, Handler, Shared};
 
 #[Workflow]
 final class SignupWorkflow
@@ -188,7 +188,7 @@ under the incoming trace.
 from the manifest (negotiated up to schema v4):
 
 ```php
-use Restate\Sdk\Service\{ServiceOptions, HandlerOptions, RetryPolicyOnMaxAttempts};
+use Qcodr\Restate\Sdk\Service\{ServiceOptions, HandlerOptions, RetryPolicyOnMaxAttempts};
 
 $endpoint = Endpoint::builder()
     ->bindWithOptions(new Counter(), (new ServiceOptions(
@@ -214,8 +214,8 @@ $endpoint = Endpoint::builder()
 ```
 
 **Transports.** Besides `SwooleServer`, the framework-agnostic core is hostable via a
-**PSR-15** adapter (`Restate\Sdk\Server\Psr15Handler`) in any Slim/Mezzio stack, on
-**AWS Lambda** (`Restate\Sdk\Server\LambdaHandler` — Function URL / API Gateway proxy),
+**PSR-15** adapter (`Qcodr\Restate\Sdk\Server\Psr15Handler`) in any Slim/Mezzio stack, on
+**AWS Lambda** (`Qcodr\Restate\Sdk\Server\LambdaHandler` — Function URL / API Gateway proxy),
 and directly via `RequestProcessor` (bytes in → bytes out).
 
 **Typed clients.** `bin/restate-codegen <ServiceClass> [outDir] [namespace]` generates

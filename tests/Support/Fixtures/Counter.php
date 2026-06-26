@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support\Fixtures;
+namespace Qcodr\Restate\Sdk\Tests\Support\Fixtures;
 
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Context\SharedObjectContext;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Context\SharedObjectContext;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
 
 #[VirtualObject]
 final class Counter

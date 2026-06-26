@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Vm;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Vm;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Vm\EagerStateStore;
+use Qcodr\Restate\Sdk\Vm\EagerStateStore;
 
 /**
  * Verifies the SDK's local state view: which reads are served locally (a present

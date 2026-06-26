@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Discovery;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Discovery;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Discovery\JsonSchemaGenerator;
-use Restate\Sdk\Discovery\ManifestBuilder;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Tests\Support\Fixtures\DtoService;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
-use Restate\Sdk\Tests\Support\Fixtures\SampleDto;
+use Qcodr\Restate\Sdk\Discovery\JsonSchemaGenerator;
+use Qcodr\Restate\Sdk\Discovery\ManifestBuilder;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\DtoService;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\SampleDto;
 
 final class JsonSchemaTest extends TestCase
 {

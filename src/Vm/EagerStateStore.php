@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Vm;
+namespace Qcodr\Restate\Sdk\Vm;
 
 /**
  * The SDK's local view of object/workflow state, seeded from `StartMessage.state_map`.

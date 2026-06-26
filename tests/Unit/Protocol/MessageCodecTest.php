@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Frame;
-use Restate\Sdk\Protocol\Message\EndMessage;
-use Restate\Sdk\Protocol\Message\OutputCommand;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\MessageHeader;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Frame;
+use Qcodr\Restate\Sdk\Protocol\Message\EndMessage;
+use Qcodr\Restate\Sdk\Protocol\Message\OutputCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\MessageHeader;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
 
 final class MessageCodecTest extends TestCase
 {

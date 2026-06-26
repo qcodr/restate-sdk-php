@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Service;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Service;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceDefinitionException;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
-use Restate\Sdk\Tests\Support\Fixtures\RunService;
-use Restate\Sdk\Tests\Support\Fixtures\StatefulService;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinitionException;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\RunService;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\StatefulService;
 
 /**
  * Item #3: a service instance is shared across concurrent invocations, so mutable

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 use Closure;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Protocol\Message\Notification;
-use Restate\Sdk\Protocol\Message\NotificationResult;
-use Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Protocol\Message\Notification;
+use Qcodr\Restate\Sdk\Protocol\Message\NotificationResult;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
  * A pending durable result (a call result, a timer, or an awakeable).

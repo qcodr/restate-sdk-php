@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Endpoint\HttpRequest;
-use Restate\Sdk\Endpoint\RequestProcessor;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Tests\Support\Fixtures\CombinatorVariantsService;
-use Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
+use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\CombinatorVariantsService;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 
 /**
  * Verifies the FIRST_SUCCEEDED_OR_ALL_FAILED (Promise.any) and

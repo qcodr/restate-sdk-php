@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol;
+namespace Qcodr\Restate\Sdk\Protocol;
 
-use Restate\Sdk\Protocol\Message\OutgoingMessage;
+use Qcodr\Restate\Sdk\Protocol\Message\OutgoingMessage;
 
 /**
  * Frames outgoing messages and parses an incoming byte stream into {@see Frame}s.

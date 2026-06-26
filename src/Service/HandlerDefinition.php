@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service;
+namespace Qcodr\Restate\Sdk\Service;
 
 /**
  * A single invokable handler resolved from a service class by reflection: its

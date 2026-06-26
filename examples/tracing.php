@@ -10,12 +10,12 @@ use OpenTelemetry\API\Trace\SpanContext;
 use OpenTelemetry\API\Trace\TraceFlags;
 use OpenTelemetry\Context\Context as OtelContext;
 use Psr\Log\AbstractLogger;
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Context\TraceContext;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Server\SwooleServer;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Context\TraceContext;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
 use Stringable;
 
 require __DIR__ . '/../vendor/autoload.php';

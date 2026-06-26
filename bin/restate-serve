@@ -9,17 +9,17 @@ declare(strict_types=1);
  * Usage:
  *   restate-serve [bootstrap.php] [host] [port]
  *
- * The bootstrap file must return a Restate\Sdk\Endpoint\Endpoint. Defaults:
+ * The bootstrap file must return a Qcodr\Restate\Sdk\Endpoint\Endpoint. Defaults:
  * bootstrap = ./restate.php, host = 0.0.0.0, port = $PORT or 9080.
  *
  * Example bootstrap (restate.php):
  *   <?php
- *   use Restate\Sdk\Endpoint\Endpoint;
+ *   use Qcodr\Restate\Sdk\Endpoint\Endpoint;
  *   return Endpoint::builder()->bind(new Greeter())->build();
  */
 
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Server\SwooleServer;
 
 (static function (array $argv): void {
     foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $autoload) {

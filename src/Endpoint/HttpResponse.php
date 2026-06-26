@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
 /**
  * A transport-agnostic HTTP response produced by the {@see RequestProcessor}.

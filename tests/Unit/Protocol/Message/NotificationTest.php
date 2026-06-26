@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Protocol\Message\Notification;
-use Restate\Sdk\Protocol\Message\NotificationResult;
-use Restate\Sdk\Protocol\Message\StateKeys;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Protocol\Message\Notification;
+use Qcodr\Restate\Sdk\Protocol\Message\NotificationResult;
+use Qcodr\Restate\Sdk\Protocol\Message\StateKeys;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 final class NotificationTest extends TestCase
 {

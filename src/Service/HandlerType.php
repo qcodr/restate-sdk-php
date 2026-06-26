@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service;
+namespace Qcodr\Restate\Sdk\Service;
 
 /**
  * The kind of a handler. Services leave this unset; Virtual Objects use

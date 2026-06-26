@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol;
+namespace Qcodr\Restate\Sdk\Protocol;
 
 /**
  * A decoded protocol frame: its 16-bit type code and raw protobuf payload.

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service\Attribute;
+namespace Qcodr\Restate\Sdk\Service\Attribute;
 
 use Attribute;
 

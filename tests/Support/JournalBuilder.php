@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support;
+namespace Qcodr\Restate\Sdk\Tests\Support;
 
-use Restate\Sdk\Protocol\MessageHeader;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\MessageHeader;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 /**
  * Builds the byte stream the runtime would send to the SDK (StartMessage + replayed
@@ -100,7 +100,7 @@ final class JournalBuilder
     }
 
     /**
-     * Adds a CallCompletion carrying a {@see \Restate\Sdk\Protocol\Message\Failure}
+     * Adds a CallCompletion carrying a {@see \Qcodr\Restate\Sdk\Protocol\Message\Failure}
      * (notification field 6) instead of a value, as the runtime delivers when the
      * callee terminally failed.
      */

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Restate\Conformance;
 
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Context\RetryPolicy;
-use Restate\Sdk\Context\RunOptions;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Context\RetryPolicy;
+use Qcodr\Restate\Sdk\Context\RunOptions;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
 use RuntimeException;
 
 /**

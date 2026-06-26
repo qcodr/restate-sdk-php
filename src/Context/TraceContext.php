@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 /**
  * The W3C Trace Context (https://www.w3.org/TR/trace-context/) the Restate runtime

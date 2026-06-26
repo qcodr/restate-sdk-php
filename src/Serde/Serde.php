@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Serde;
+namespace Qcodr\Restate\Sdk\Serde;
 
 /**
  * Serializes handler inputs/outputs and state values to and from the raw bytes that

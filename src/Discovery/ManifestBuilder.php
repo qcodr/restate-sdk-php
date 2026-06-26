@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Discovery;
+namespace Qcodr\Restate\Sdk\Discovery;
 
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Service\HandlerDefinition;
-use Restate\Sdk\Service\HandlerOptions;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceOptions;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Service\HandlerDefinition;
+use Qcodr\Restate\Sdk\Service\HandlerOptions;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceOptions;
 
 /**
  * Builds the endpoint discovery manifest returned from `GET /discovery`.

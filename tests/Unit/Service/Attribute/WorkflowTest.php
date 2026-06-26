@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Service\Attribute;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Service\Attribute;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Service\Attribute\Workflow;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
 
 final class WorkflowTest extends TestCase
 {

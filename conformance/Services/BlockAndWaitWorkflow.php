@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Restate\Conformance;
 
-use Restate\Sdk\Context\SharedWorkflowContext;
-use Restate\Sdk\Context\WorkflowContext;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\Workflow;
+use Qcodr\Restate\Sdk\Context\SharedWorkflowContext;
+use Qcodr\Restate\Sdk\Context\WorkflowContext;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
 
 /**
  * Workflow that blocks on a durable promise until an interaction handler unblocks it.

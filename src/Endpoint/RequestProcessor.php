@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
 use Psr\Log\LoggerInterface;
-use Restate\Sdk\Context\Clock;
-use Restate\Sdk\Discovery\DiscoveryContentType;
-use Restate\Sdk\Discovery\ManifestBuilder;
-use Restate\Sdk\Protocol\ProtocolException;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Serde\Serde;
-use Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Context\Clock;
+use Qcodr\Restate\Sdk\Discovery\DiscoveryContentType;
+use Qcodr\Restate\Sdk\Discovery\ManifestBuilder;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
  * The framework-agnostic core of the deployment endpoint.

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Discovery;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Discovery;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Discovery\DiscoveryContentType;
+use Qcodr\Restate\Sdk\Discovery\DiscoveryContentType;
 
 final class DiscoveryContentTypeTest extends TestCase
 {

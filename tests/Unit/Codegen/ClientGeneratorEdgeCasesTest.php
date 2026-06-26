@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Codegen;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Codegen;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Codegen\ClientGenerator;
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\Workflow;
+use Qcodr\Restate\Sdk\Codegen\ClientGenerator;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
 
 /**
  * Generation for handler/return-type and service-name shapes that the happy-path

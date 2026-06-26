@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LoggerTrait;
 use Psr\Log\LogLevel;
-use Restate\Sdk\Context\ReplayAwareLogger;
+use Qcodr\Restate\Sdk\Context\ReplayAwareLogger;
 use Stringable;
 
 /**

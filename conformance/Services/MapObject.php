@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Restate\Conformance;
 
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
 
 /**
  * Conformance map Virtual Object: stores string values under dynamic state keys

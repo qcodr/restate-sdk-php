@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol;
+namespace Qcodr\Restate\Sdk\Protocol;
 
 /**
  * The fixed 64-bit big-endian frame header that prefixes every protocol message.

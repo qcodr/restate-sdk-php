@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Codegen;
+namespace Qcodr\Restate\Sdk\Codegen;
 
 use InvalidArgumentException;
+use Qcodr\Restate\Sdk\Service\HandlerDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceType;
 use ReflectionClass;
-use Restate\Sdk\Service\HandlerDefinition;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceType;
 
 /**
  * Generates typed, IDE-autocompletable PHP client classes for Restate services.
@@ -16,7 +16,7 @@ use Restate\Sdk\Service\ServiceType;
  * Given a service class, {@see generate} reflects its {@see ServiceDefinition}
  * (Restate name, service type, handlers) and emits the source of a
  * `{ServiceName}Client` that delegates each handler to the matching
- * {@see \Restate\Sdk\Context\Context} call method. Callers then write
+ * {@see \Qcodr\Restate\Sdk\Context\Context} call method. Callers then write
  * `GreeterClient::fromContext($ctx)->greet('world')` instead of the
  * stringly-typed `$ctx->serviceCall('Greeter', 'greet', 'world')`.
  *
@@ -129,13 +129,13 @@ final class ClientGenerator
             '',
             \sprintf('namespace %s;', $this->namespace),
             '',
-            'use Restate\\Sdk\\Context\\Context;',
-            'use Restate\\Sdk\\Context\\DurableFuture;',
+            'use Qcodr\\Restate\\Sdk\\Context\\Context;',
+            'use Qcodr\\Restate\\Sdk\\Context\\DurableFuture;',
             '',
             '/**',
             \sprintf(' * Typed Restate client for the "%s" %s.', $definition->name, $this->kindLabel($definition->type)),
             ' *',
-            \sprintf(' * Generated from %s by Restate\\Sdk\\Codegen\\ClientGenerator;', $serviceClass),
+            \sprintf(' * Generated from %s by Qcodr\\Restate\\Sdk\\Codegen\\ClientGenerator;', $serviceClass),
             ' * do not edit by hand — re-run restate-codegen to regenerate.',
             ' */',
             \sprintf('final class %s', $className),

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Support\Fixtures;
+namespace Qcodr\Restate\Sdk\Tests\Support\Fixtures;
 
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
 
 #[Service]
 final class RunService

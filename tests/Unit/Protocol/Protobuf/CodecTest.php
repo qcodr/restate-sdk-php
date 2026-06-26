@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Protobuf;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Protobuf;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\Protobuf\WireType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\WireType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
 
 final class CodecTest extends TestCase
 {
@@ -50,7 +50,7 @@ final class CodecTest extends TestCase
         // length it must be rejected, not silently corrupt the offset (DoS guard).
         $reader = new Reader(Writer::varint(\PHP_INT_MIN));
 
-        $this->expectException(\Restate\Sdk\Protocol\ProtocolException::class);
+        $this->expectException(\Qcodr\Restate\Sdk\Protocol\ProtocolException::class);
         $reader->readLengthDelimited();
     }
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Discovery;
+namespace Qcodr\Restate\Sdk\Discovery;
 
 use ReflectionClass;
 use ReflectionNamedType;

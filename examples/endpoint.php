@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Restate\Examples;
 
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Server\SwooleServer;
 
 require __DIR__ . '/../vendor/autoload.php';
 

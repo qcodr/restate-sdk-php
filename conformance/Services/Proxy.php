@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Restate\Conformance;
 
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
 
 /**
  * Conformance proxy service: forwards opaque request bytes to an arbitrary target

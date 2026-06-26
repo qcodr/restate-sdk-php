@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Endpoint\Identity;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint\Identity;
 
 use PHPUnit\Framework\TestCase;
+use Qcodr\Restate\Sdk\Endpoint\Identity\IdentityKey;
+use Qcodr\Restate\Sdk\Endpoint\Identity\IdentityKeyException;
 use ReflectionClass;
-use Restate\Sdk\Endpoint\Identity\IdentityKey;
-use Restate\Sdk\Endpoint\Identity\IdentityKeyException;
 
 /**
  * Branch coverage for {@see IdentityKey}: base58 edge cases (empty body, leading

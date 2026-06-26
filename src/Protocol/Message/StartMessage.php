@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
 
 /**
  * `StartMessage` (0x0000): the first frame of every invocation stream. It carries

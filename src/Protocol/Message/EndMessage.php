@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
 
 /**
  * `EndMessage` (0x0003): terminates an invocation that returned a value or a

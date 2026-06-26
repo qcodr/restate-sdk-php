@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Service;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Service;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Service;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\VirtualObject;
-use Restate\Sdk\Service\Attribute\Workflow;
-use Restate\Sdk\Service\HandlerType;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceDefinitionException;
-use Restate\Sdk\Service\ServiceType;
-use Restate\Sdk\Tests\Support\Fixtures\Counter;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Service;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Service\Attribute\Workflow;
+use Qcodr\Restate\Sdk\Service\HandlerType;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinitionException;
+use Qcodr\Restate\Sdk\Service\ServiceType;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
 
 /**
  * Reflection-driven discovery: every service kind, handler-type mapping, and the

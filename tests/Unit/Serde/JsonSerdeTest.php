@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Serde;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Serde;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Serde\JsonSerde;
-use Restate\Sdk\Serde\SerializationException;
+use Qcodr\Restate\Sdk\Serde\JsonSerde;
+use Qcodr\Restate\Sdk\Serde\SerializationException;
 
 final class JsonSerdeTest extends TestCase
 {

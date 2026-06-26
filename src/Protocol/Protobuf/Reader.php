@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Protobuf;
+namespace Qcodr\Restate\Sdk\Protocol\Protobuf;
 
-use Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 
 /**
  * Minimal proto3 binary decoder, the inverse of {@see Writer}.

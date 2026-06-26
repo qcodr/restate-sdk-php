@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Protocol\Message;
 
-use Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
 
 /**
  * A protocol message the SDK writes to the runtime.
  *
  * Implementations expose their frame type and their protobuf payload; the
- * {@see \Restate\Sdk\Protocol\MessageCodec} prefixes the 64-bit header.
+ * {@see \Qcodr\Restate\Sdk\Protocol\MessageCodec} prefixes the 64-bit header.
  */
 interface OutgoingMessage
 {

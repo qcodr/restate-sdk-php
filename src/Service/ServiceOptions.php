@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Service;
+namespace Qcodr\Restate\Sdk\Service;
 
 /**
  * Per-service discovery configuration advertised in the endpoint manifest, plus an
@@ -10,7 +10,7 @@ namespace Restate\Sdk\Service;
  *
  * Every field is optional: a `null` value means "leave unset", so the runtime keeps
  * its own default. Durations are expressed in milliseconds. Which keys are actually
- * emitted depends on the negotiated manifest version — see {@see \Restate\Sdk\Discovery\ManifestBuilder}:
+ * emitted depends on the negotiated manifest version — see {@see \Qcodr\Restate\Sdk\Discovery\ManifestBuilder}:
  *   - `documentation` / `metadata` require manifest v2+;
  *   - timeouts, retention windows, `enableLazyState` and `ingressPrivate` require v3+;
  *   - the retry-policy fields require v4+.

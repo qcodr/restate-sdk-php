@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Vm;
+namespace Qcodr\Restate\Sdk\Vm;
 
 /**
  * The lifecycle phases of the invocation state machine.

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Restate\Examples;
 
-use Restate\Sdk\Context\ObjectContext;
-use Restate\Sdk\Context\SharedObjectContext;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Service\Attribute\Handler;
-use Restate\Sdk\Service\Attribute\Shared;
-use Restate\Sdk\Service\Attribute\VirtualObject;
+use Qcodr\Restate\Sdk\Context\ObjectContext;
+use Qcodr\Restate\Sdk\Context\SharedObjectContext;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Service\Attribute\Handler;
+use Qcodr\Restate\Sdk\Service\Attribute\Shared;
+use Qcodr\Restate\Sdk\Service\Attribute\VirtualObject;
 
 require __DIR__ . '/../vendor/autoload.php';
 

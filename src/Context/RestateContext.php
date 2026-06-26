@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 use InvalidArgumentException;
 use LogicException;
 use Psr\Log\LoggerInterface;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Protocol\ErrorBehavior;
-use Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
-use Restate\Sdk\Protocol\Message\Failure;
-use Restate\Sdk\Protocol\Message\Future;
-use Restate\Sdk\Protocol\Message\Header;
-use Restate\Sdk\Serde\Serde;
-use Restate\Sdk\Serde\SerializationException;
-use Restate\Sdk\Vm\InvocationInput;
-use Restate\Sdk\Vm\StateMachine;
-use Restate\Sdk\Vm\SuspendException;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
+use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Failure;
+use Qcodr\Restate\Sdk\Protocol\Message\Future;
+use Qcodr\Restate\Sdk\Protocol\Message\Header;
+use Qcodr\Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Serde\SerializationException;
+use Qcodr\Restate\Sdk\Vm\InvocationInput;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Vm\SuspendException;
 use Throwable;
 
 /**

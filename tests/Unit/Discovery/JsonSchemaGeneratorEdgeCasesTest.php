@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Discovery;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Discovery;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Discovery\JsonSchemaGenerator;
+use Qcodr\Restate\Sdk\Discovery\JsonSchemaGenerator;
 
 /**
  * Structural edge cases for class-to-schema reflection: recursion-depth fallback,

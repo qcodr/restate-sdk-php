@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Protobuf;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Protobuf;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\Protobuf\WireType;
-use Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\WireType;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 
 final class ReaderSkipTest extends TestCase
 {

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol\Message;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\ErrorMessage;
-use Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\Message\ErrorMessage;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
 
 final class ErrorMessageRelatedCommandTest extends TestCase
 {

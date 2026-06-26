@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\Awakeable;
-use Restate\Sdk\Context\DurableFuture;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Tests\Support\JournalBuilder;
-use Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Context\Awakeable;
+use Qcodr\Restate\Sdk\Context\DurableFuture;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
  * Verifies the awakeable handle: it exposes the public id verbatim and delegates

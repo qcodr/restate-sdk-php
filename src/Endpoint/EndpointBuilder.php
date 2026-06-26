@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Endpoint;
+namespace Qcodr\Restate\Sdk\Endpoint;
 
-use Restate\Sdk\Endpoint\Identity\IdentityKey;
-use Restate\Sdk\Endpoint\Identity\IdentityKeyException;
-use Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceDefinitionException;
-use Restate\Sdk\Service\ServiceOptions;
+use Qcodr\Restate\Sdk\Endpoint\Identity\IdentityKey;
+use Qcodr\Restate\Sdk\Endpoint\Identity\IdentityKeyException;
+use Qcodr\Restate\Sdk\Endpoint\Identity\RequestIdentityVerifier;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinitionException;
+use Qcodr\Restate\Sdk\Service\ServiceOptions;
 
 /**
  * Fluent builder that registers service instances and produces an {@see Endpoint}.

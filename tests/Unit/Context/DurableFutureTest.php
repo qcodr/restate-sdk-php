@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Context;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Context;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Context\DurableFuture;
-use Restate\Sdk\Error\TerminalException;
-use Restate\Sdk\Protocol\Message\StateKeys;
-use Restate\Sdk\Protocol\MessageHeader;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Writer;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Context\DurableFuture;
+use Qcodr\Restate\Sdk\Error\TerminalException;
+use Qcodr\Restate\Sdk\Protocol\Message\StateKeys;
+use Qcodr\Restate\Sdk\Protocol\MessageHeader;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
  * Verifies DurableFuture against a state machine seeded with replayed notifications:

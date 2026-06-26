@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Vm;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Vm;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\StateKeys;
-use Restate\Sdk\Protocol\Message\Value;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\MessageType;
-use Restate\Sdk\Protocol\Protobuf\Reader;
-use Restate\Sdk\Protocol\ServiceProtocolVersion;
-use Restate\Sdk\Tests\Support\JournalBuilder;
-use Restate\Sdk\Vm\StateMachine;
-use Restate\Sdk\Vm\SuspendException;
+use Qcodr\Restate\Sdk\Protocol\Message\StateKeys;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\MessageType;
+use Qcodr\Restate\Sdk\Protocol\Protobuf\Reader;
+use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
+use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
+use Qcodr\Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Vm\SuspendException;
 
 final class StateMachineTest extends TestCase
 {
@@ -466,7 +466,7 @@ final class StateMachineTest extends TestCase
     }
 
     /**
-     * Decodes a {@see \Restate\Sdk\Protocol\Message\GetEagerStateCommand} payload.
+     * Decodes a {@see \Qcodr\Restate\Sdk\Protocol\Message\GetEagerStateCommand} payload.
      *
      * @return array{0: string, 1: string, 2: bool} [key, value, void]
      */
@@ -508,7 +508,7 @@ final class StateMachineTest extends TestCase
     }
 
     /**
-     * Decodes a {@see \Restate\Sdk\Protocol\Message\Future} payload, returning its
+     * Decodes a {@see \Qcodr\Restate\Sdk\Protocol\Message\Future} payload, returning its
      * leaf ids and the raw bytes of each nested future.
      *
      * @return array{completions: list<int>, signals: list<int>, nested: list<string>}

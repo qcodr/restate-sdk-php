@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Context;
+namespace Qcodr\Restate\Sdk\Context;
 
 use Psr\Log\LoggerInterface;
 
@@ -111,7 +111,7 @@ interface Context
      *
      * Unlike {@see serviceCall} / {@see objectCall} no (de)serialization is applied:
      * `$parameter` is sent verbatim and the callee's response is returned verbatim. A
-     * failed call surfaces as a {@see \Restate\Sdk\Error\TerminalException}.
+     * failed call surfaces as a {@see \Qcodr\Restate\Sdk\Error\TerminalException}.
      *
      * `$key === ''` targets a Service; a non-empty `$key` targets a Virtual Object or
      * Workflow — the same convention as {@see objectCall}.
@@ -214,7 +214,7 @@ interface Context
      *
      * Ready futures that have failed are skipped; a failure is only surfaced when
      * every future has failed, in which case the last failure is rethrown as a
-     * {@see \Restate\Sdk\Error\TerminalException}.
+     * {@see \Qcodr\Restate\Sdk\Error\TerminalException}.
      *
      * @param DurableFuture ...$futures
      *
@@ -225,7 +225,7 @@ interface Context
     /**
      * Awaits every future to succeed, short-circuiting on the first failure
      * (JS `Promise.all`): if any future has failed its
-     * {@see \Restate\Sdk\Error\TerminalException} is rethrown immediately; otherwise
+     * {@see \Qcodr\Restate\Sdk\Error\TerminalException} is rethrown immediately; otherwise
      * the values are returned in order.
      *
      * @param list<DurableFuture> $futures

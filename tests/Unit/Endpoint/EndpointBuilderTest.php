@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Endpoint;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Endpoint\Endpoint;
-use Restate\Sdk\Service\ServiceDefinition;
-use Restate\Sdk\Service\ServiceDefinitionException;
-use Restate\Sdk\Service\ServiceOptions;
-use Restate\Sdk\Tests\Support\Fixtures\Counter;
-use Restate\Sdk\Tests\Support\Fixtures\Greeter;
+use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Service\ServiceDefinitionException;
+use Qcodr\Restate\Sdk\Service\ServiceOptions;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
 
 /**
- * Branch coverage for {@see \Restate\Sdk\Endpoint\EndpointBuilder}: duplicate
+ * Branch coverage for {@see \Qcodr\Restate\Sdk\Endpoint\EndpointBuilder}: duplicate
  * binding, binding with options, and the empty-endpoint guard.
  */
 final class EndpointBuilderTest extends TestCase

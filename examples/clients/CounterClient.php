@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Restate\Examples\Clients;
 
-use Restate\Sdk\Context\Context;
-use Restate\Sdk\Context\DurableFuture;
+use Qcodr\Restate\Sdk\Context\Context;
+use Qcodr\Restate\Sdk\Context\DurableFuture;
 
 /**
  * Typed Restate client for the "Counter" virtual object.
  *
- * Generated from Restate\Sdk\Tests\Support\Fixtures\Counter by Restate\Sdk\Codegen\ClientGenerator;
+ * Generated from Qcodr\Restate\Sdk\Tests\Support\Fixtures\Counter by Qcodr\Restate\Sdk\Codegen\ClientGenerator;
  * do not edit by hand — re-run restate-codegen to regenerate.
  */
 final class CounterClient

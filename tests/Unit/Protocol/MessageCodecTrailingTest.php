@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Restate\Sdk\Tests\Unit\Protocol;
+namespace Qcodr\Restate\Sdk\Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Restate\Sdk\Protocol\Message\EndMessage;
-use Restate\Sdk\Protocol\MessageCodec;
-use Restate\Sdk\Protocol\ProtocolException;
+use Qcodr\Restate\Sdk\Protocol\Message\EndMessage;
+use Qcodr\Restate\Sdk\Protocol\MessageCodec;
+use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 
 final class MessageCodecTrailingTest extends TestCase
 {
