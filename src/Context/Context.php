@@ -37,6 +37,13 @@ interface Context
      * {@see TraceContext} into the OpenTelemetry PHP SDK (build a `SpanContext` from
      * its trace/span ids and flags, or re-inject {@see TraceContext::toTraceparent()}
      * through a propagator) to start spans that nest under the incoming trace.
+     *
+     * Propagation boundary: trace propagation *across the service graph* (to the
+     * services this invocation calls or sends to) is the **Restate runtime's** job —
+     * it stamps `traceparent` on the request it hands the SDK and links child
+     * invocations. Do not manually forward `traceparent` on outgoing call headers;
+     * this context is for spans around your own work *inside* the handler.
+     * See `examples/tracing.php` for the OpenTelemetry bridge.
      */
     public function traceContext(): ?TraceContext;
 

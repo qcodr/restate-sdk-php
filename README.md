@@ -168,8 +168,19 @@ replay, so each line is logged exactly once even though handlers re-run from the
 on every slice. Provide the underlying logger (e.g. Monolog) when constructing the
 server: `new SwooleServer($endpoint, logger: $myLogger)` (defaults to a null logger).
 
-For distributed **tracing**, the runtime propagates W3C trace context in the request
-headers; bridge it to the OpenTelemetry PHP SDK to emit spans. See `examples/tracing.php`.
+For distributed **tracing**, mind the propagation boundary:
+
+- **Across the service graph** (the services your handler calls or sends to) — the
+  **Restate runtime** propagates the trace. It stamps `traceparent` on the request it
+  sends the SDK and links child invocations itself. Do **not** manually forward
+  `traceparent` on `ctx->serviceCall(...)` headers; doing so forks the trace.
+- **Inside one handler** (spans around your own DB/HTTP/compute work) — that's yours.
+  `ctx->traceContext()` exposes the inbound W3C context (`traceId`, `spanId()`,
+  `isSampled()`, `toTraceparent()`) so your spans nest under the incoming trace.
+
+The SDK stays dependency-free and emits no spans itself. Install `open-telemetry/sdk`
+and use the `withIncomingTraceParent()` bridge in `examples/tracing.php` to start spans
+under the incoming trace.
 
 ## Production configuration
 

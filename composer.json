@@ -25,7 +25,8 @@
     },
     "suggest": {
         "ext-swoole": "Required to run the Swoole-based HTTP server (Restate\\Sdk\\Server\\SwooleServer).",
-        "ext-sodium": "Required for request identity verification (Restate\\Sdk\\Endpoint\\Identity)."
+        "ext-sodium": "Required for request identity verification (Restate\\Sdk\\Endpoint\\Identity).",
+        "open-telemetry/sdk": "Bridge Context::traceContext() into OpenTelemetry spans (see examples/tracing.php)."
     },
     "autoload": {
         "psr-4": {

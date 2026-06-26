@@ -78,4 +78,42 @@ final class TraceContextTest extends TestCase
         self::assertNotNull($trace);
         self::assertSame(self::VALID, $trace->toTraceparent());
     }
+
+    /**
+     * Pins the contract the OpenTelemetry bridge relies on
+     * (`SpanContext::createFromRemoteParent($traceId, $spanId, $flags)`): a 32-hex
+     * trace id, a 16-hex span id equal to the parent id, and a sampled flag.
+     */
+    public function testExposesOpenTelemetrySpanContextInputs(): void
+    {
+        $trace = TraceContext::fromHeaders(['traceparent' => self::VALID]);
+
+        self::assertNotNull($trace);
+        self::assertSame(32, \strlen($trace->traceId));
+        self::assertTrue(\ctype_xdigit($trace->traceId));
+        self::assertSame(16, \strlen($trace->spanId()));
+        self::assertTrue(\ctype_xdigit($trace->spanId()));
+        self::assertSame($trace->parentId, $trace->spanId());
+        self::assertTrue($trace->isSampled());
+    }
+
+    public function testIsSampledReflectsOnlyFlagsBitZero(): void
+    {
+        $base = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-';
+
+        $unsampled = TraceContext::fromHeaders(['traceparent' => $base . '00']);
+        self::assertNotNull($unsampled);
+        self::assertSame(0, $unsampled->traceFlags);
+        self::assertFalse($unsampled->isSampled());
+
+        // Flags 0x02 (random) without bit 0 set must still read as not sampled.
+        $randomNotSampled = TraceContext::fromHeaders(['traceparent' => $base . '02']);
+        self::assertNotNull($randomNotSampled);
+        self::assertFalse($randomNotSampled->isSampled());
+
+        // Flags 0x03 sets bit 0 -> sampled.
+        $sampled = TraceContext::fromHeaders(['traceparent' => $base . '03']);
+        self::assertNotNull($sampled);
+        self::assertTrue($sampled->isSampled());
+    }
 }
