@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/qcodr/restate-sdk-php/branch/main/graph/badge.svg)](https://codecov.io/gh/qcodr/restate-sdk-php)
 [![PHPStan level max](https://img.shields.io/badge/PHPStan-level%20max-brightgreen.svg)](phpstan.neon)
 [![Psalm type coverage](https://shepherd.dev/github/qcodr/restate-sdk-php/coverage.svg)](https://shepherd.dev/github/qcodr/restate-sdk-php)
+[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2Fqcodr%2Frestate-sdk-php%2Fmain)](https://dashboard.stryker-mutator.io/reports/github.com/qcodr/restate-sdk-php/main)
 [![Latest Stable Version](https://img.shields.io/packagist/v/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
 [![Total Downloads](https://img.shields.io/packagist/dt/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
 [![PHP Version](https://img.shields.io/packagist/php-v/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)

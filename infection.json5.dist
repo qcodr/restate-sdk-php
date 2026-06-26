@@ -19,6 +19,11 @@
     "logs": {
         "text": "build/infection/infection.log",
         "html": "build/infection/infection.html",
-        "summary": "build/infection/summary.log"
+        "summary": "build/infection/summary.log",
+        // Uploads the MSI to the Stryker dashboard for the README badge. Only
+        // runs on `main` when INFECTION_BADGE_API_KEY is present (CI secret).
+        "stryker": {
+            "badge": "main"
+        }
     }
 }
