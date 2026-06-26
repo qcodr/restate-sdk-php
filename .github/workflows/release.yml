@@ -25,7 +25,7 @@ jobs:
     name: Verify tagged commit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -35,7 +35,7 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        uses: ramsey/composer-install@v3
+        run: composer install --no-interaction --no-progress
 
       - name: Validate composer.json
         run: composer validate --strict --no-check-lock
