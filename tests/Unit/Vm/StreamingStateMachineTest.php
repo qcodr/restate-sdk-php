@@ -7,13 +7,13 @@ namespace Qcodr\Restate\Sdk\Tests\Unit\Vm;
 use Fiber;
 use PHPUnit\Framework\TestCase;
 use Qcodr\Restate\Sdk\Protocol\Message\CombinatorType;
-use Qcodr\Restate\Sdk\Protocol\Message\Future;
 use Qcodr\Restate\Sdk\Protocol\Message\Notification;
 use Qcodr\Restate\Sdk\Protocol\MessageType;
 use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Tests\Support\JournalBuilder;
 use Qcodr\Restate\Sdk\Tests\Support\RecordingOutputSink;
 use Qcodr\Restate\Sdk\Vm\FiberSuspender;
+use Qcodr\Restate\Sdk\Vm\ParkSignal;
 use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
@@ -53,13 +53,16 @@ final class StreamingStateMachineTest extends TestCase
             $result = $vm->awaitCompletion($resultId);
         });
 
-        $awaitTree = $fiber->start();
+        $park = $fiber->start();
 
         self::assertTrue($fiber->isSuspended(), 'an unresolved await parks the fiber');
         self::assertNull($result, 'the await has not returned a value while parked');
 
-        // The fiber yields the cancel-guarded await tree (not a SuspensionMessage).
-        self::assertInstanceOf(Future::class, $awaitTree);
+        // The fiber yields a ParkSignal carrying the cancel-guarded await tree (not a
+        // SuspensionMessage) plus the predicate the driver evaluates before resuming.
+        self::assertInstanceOf(ParkSignal::class, $park);
+        self::assertFalse(($park->isResolved)(), 'the await is unresolved while the completion is absent');
+        $awaitTree = $park->awaitTree;
         self::assertSame([self::CANCEL_SIGNAL_ID], $awaitTree->waitingSignals);
         self::assertSame(CombinatorType::FirstCompleted, $awaitTree->combinatorType);
         self::assertCount(1, $awaitTree->nestedFutures);
@@ -105,17 +108,20 @@ final class StreamingStateMachineTest extends TestCase
         $sink = new RecordingOutputSink();
         $vm = $this->streamingMachine($sink);
 
-        // Two unresolved results raced via the lowest-level combinator entry point.
+        // Two unresolved results raced via the lowest-level combinator entry point. The
+        // predicate is supplied by the caller; here it is never invoked because the fiber
+        // is resumed directly (no driver), so a trivial always-true closure suffices.
         $finished = false;
         $fiber = new Fiber(static function () use ($vm, &$finished): void {
-            $vm->suspendAny([2, 4], []);
+            $vm->suspendAny([2, 4], [], static fn (): bool => true);
             $finished = true;
         });
 
-        $awaitTree = $fiber->start();
+        $park = $fiber->start();
 
         self::assertTrue($fiber->isSuspended(), 'the combinator parked rather than returning');
-        self::assertInstanceOf(Future::class, $awaitTree);
+        self::assertInstanceOf(ParkSignal::class, $park);
+        $awaitTree = $park->awaitTree;
         self::assertSame([self::CANCEL_SIGNAL_ID], $awaitTree->waitingSignals);
         self::assertCount(1, $awaitTree->nestedFutures);
         self::assertSame([2, 4], $awaitTree->nestedFutures[0]->waitingCompletions);

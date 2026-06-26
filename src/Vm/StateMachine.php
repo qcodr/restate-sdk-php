@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Vm;
 
+use Closure;
 use Qcodr\Restate\Sdk\Error\CancelledException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Frame;
@@ -570,19 +571,26 @@ final class StateMachine
     /** Returns the completion if ready, otherwise parks (or fails if cancelled). */
     public function awaitCompletion(int $completionId): Notification
     {
-        while (true) {
-            if (isset($this->completions[$completionId])) {
-                return $this->completions[$completionId];
-            }
-
-            if ($this->isCancelled()) {
-                throw new CancelledException();
-            }
-
-            // In request/response this parks by throwing; in streaming it returns once
-            // the driver fed the completion, so the loop re-checks the table.
-            $this->parkOn(Future::forCompletion($completionId));
+        if (isset($this->completions[$completionId])) {
+            return $this->completions[$completionId];
         }
+        if ($this->isCancelled()) {
+            throw new CancelledException();
+        }
+
+        // Request/response parks by throwing (the lines below are unreachable there);
+        // streaming returns only once the driver has fed the completion (or a cancel),
+        // as enforced by the readiness predicate, so the await runs on straight-line.
+        $this->parkOn(
+            Future::forCompletion($completionId),
+            fn (): bool => isset($this->completions[$completionId]) || $this->isCancelled(),
+        );
+
+        if ($this->isCancelled()) {
+            throw new CancelledException(); // cancel won the race
+        }
+
+        return $this->peekCompletion($completionId); // the driver guarantees its presence
     }
 
     public function isSignalReady(int $signalId): bool
@@ -592,17 +600,23 @@ final class StateMachine
 
     public function awaitSignal(int $signalId): Notification
     {
-        while (true) {
-            if (isset($this->signals[$signalId])) {
-                return $this->signals[$signalId];
-            }
-
-            if ($this->isCancelled()) {
-                throw new CancelledException();
-            }
-
-            $this->parkOn(Future::forSignal($signalId));
+        if (isset($this->signals[$signalId])) {
+            return $this->signals[$signalId];
         }
+        if ($this->isCancelled()) {
+            throw new CancelledException();
+        }
+
+        $this->parkOn(
+            Future::forSignal($signalId),
+            fn (): bool => isset($this->signals[$signalId]) || $this->isCancelled(),
+        );
+
+        if ($this->isCancelled()) {
+            throw new CancelledException(); // cancel won the race
+        }
+
+        return $this->peekSignal($signalId); // the driver guarantees its presence
     }
 
     /** Reads a ready signal without consuming it (non-destructive; see {@see peekCompletion}). */
@@ -618,23 +632,27 @@ final class StateMachine
     /**
      * Parks awaiting the first of several results to complete (race semantics).
      *
-     * @param list<int> $completionIds
-     * @param list<int> $signalIds
+     * @param list<int>       $completionIds
+     * @param list<int>       $signalIds
+     * @param Closure(): bool $isResolved    the combinator's readiness predicate, supplied
+     *                                       by the caller; the streaming driver resumes only
+     *                                       once it holds
      */
-    public function suspendAny(array $completionIds, array $signalIds): void
+    public function suspendAny(array $completionIds, array $signalIds, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted), $isResolved);
     }
 
     /**
      * Parks awaiting every result to complete.
      *
-     * @param list<int> $completionIds
-     * @param list<int> $signalIds
+     * @param list<int>       $completionIds
+     * @param list<int>       $signalIds
+     * @param Closure(): bool $isResolved
      */
-    public function suspendAll(array $completionIds, array $signalIds): void
+    public function suspendAll(array $completionIds, array $signalIds, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted), $isResolved);
     }
 
     /**
@@ -642,12 +660,13 @@ final class StateMachine
      * combinator resolves on the first success, or once every awaited result has
      * failed.
      *
-     * @param list<int> $completionIds
-     * @param list<int> $signalIds
+     * @param list<int>       $completionIds
+     * @param list<int>       $signalIds
+     * @param Closure(): bool $isResolved
      */
-    public function suspendAnySucceeded(array $completionIds, array $signalIds): void
+    public function suspendAnySucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed), $isResolved);
     }
 
     /**
@@ -655,12 +674,13 @@ final class StateMachine
      * first failure (Promise.all): the combinator resolves once all awaited results
      * have succeeded, or on the first one to fail.
      *
-     * @param list<int> $completionIds
-     * @param list<int> $signalIds
+     * @param list<int>       $completionIds
+     * @param list<int>       $signalIds
+     * @param Closure(): bool $isResolved
      */
-    public function suspendAllSucceeded(array $completionIds, array $signalIds): void
+    public function suspendAllSucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed), $isResolved);
     }
 
     /**
@@ -673,16 +693,21 @@ final class StateMachine
      * only on (say) an awakeable would never be woken by a cancel and would hang.
      *
      * In request/response the suspender writes the suspension and throws to unwind the
-     * handler; in streaming it yields the fiber and returns once a result has arrived.
+     * handler; in streaming it yields the fiber (with its readiness predicate) and
+     * returns once the driver has fed a result that satisfies the predicate.
+     *
+     * @param Closure(): bool $isResolved the await's readiness predicate, forwarded to
+     *                                    the suspender so the streaming driver wakes the
+     *                                    fiber only when the awaited result is present
      */
-    private function parkOn(Future $inner): void
+    private function parkOn(Future $inner, Closure $isResolved): void
     {
         $awaitOn = new Future(
             waitingSignals: [self::CANCEL_SIGNAL_ID],
             nestedFutures: [$inner],
             combinatorType: CombinatorType::FirstCompleted,
         );
-        $this->suspender->park($this, $awaitOn);
+        $this->suspender->park($this, $awaitOn, $isResolved);
     }
 
     /**

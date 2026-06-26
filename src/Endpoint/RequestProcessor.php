@@ -10,6 +10,7 @@ use Qcodr\Restate\Sdk\Discovery\DiscoveryContentType;
 use Qcodr\Restate\Sdk\Discovery\ManifestBuilder;
 use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Serde\Serde;
+use Qcodr\Restate\Sdk\Vm\FiberSuspender;
 use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
@@ -37,6 +38,15 @@ final class RequestProcessor
     private readonly ManifestBuilder $manifestBuilder;
     private readonly InvocationDriver $invocationDriver;
 
+    /**
+     * @param ProtocolMode $transportCapability the richest transport mode the host can
+     *                                           actually serve; discovery advertises the
+     *                                           lesser of this and the endpoint's own
+     *                                           mode, so a bidi-configured endpoint never
+     *                                           advertises BIDI_STREAM on a request/response
+     *                                           host. Defaults to RequestResponse, the only
+     *                                           mode the Swoole/PSR-15/Lambda hosts serve.
+     */
     public function __construct(
         private readonly Endpoint $endpoint,
         ?Serde $serde = null,
@@ -44,6 +54,7 @@ final class RequestProcessor
         ?ManifestBuilder $manifestBuilder = null,
         ?LoggerInterface $logger = null,
         bool $debug = false,
+        private readonly ProtocolMode $transportCapability = ProtocolMode::RequestResponse,
     ) {
         $this->manifestBuilder = $manifestBuilder ?? new ManifestBuilder();
         $this->invocationDriver = new InvocationDriver($serde, $clock, $logger, $debug);
@@ -51,19 +62,9 @@ final class RequestProcessor
 
     public function process(HttpRequest $request): HttpResponse
     {
-        // Request-identity verification (opt-in): when the endpoint is configured
-        // with one or more `publickeyv1_...` keys, every request — discovery,
-        // invoke and health alike, matching the Rust/shared-core behaviour — must
-        // carry a valid Restate signature. With no key configured this is a no-op.
-        $verifier = $this->endpoint->identityVerifier();
-        if ($verifier !== null && !$verifier->verify($request)) {
-            return HttpResponse::of(401, 'Unauthorized', [self::HEADER_CONTENT_TYPE => 'text/plain']);
-        }
-
-        // Transport-agnostic body cap so every host (Swoole, PSR-15, Lambda) is
-        // protected from unbounded parsing, not just the Swoole server.
-        if (\strlen($request->body) > self::MAX_BODY_BYTES) {
-            return HttpResponse::of(413, 'Request body too large', [self::HEADER_CONTENT_TYPE => 'text/plain']);
+        $rejection = $this->guard($request);
+        if ($rejection !== null) {
+            return $rejection;
         }
 
         $path = \rtrim($request->path, '/');
@@ -96,7 +97,7 @@ final class RequestProcessor
             }
         }
 
-        $manifest = $this->manifestBuilder->build($services, $version, $options, $this->endpoint->protocolMode());
+        $manifest = $this->manifestBuilder->build($services, $version, $options, $this->effectiveProtocolMode());
         $body = \json_encode($manifest, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         return HttpResponse::of(200, $body, [
@@ -109,15 +110,7 @@ final class RequestProcessor
     {
         $version = ServiceProtocolVersion::fromContentType($request->header(self::HEADER_CONTENT_TYPE) ?? '');
         if ($version === null) {
-            return HttpResponse::of(
-                415,
-                \sprintf(
-                    'Unsupported service protocol version (supported: v%d-v%d)',
-                    ServiceProtocolVersion::min()->value,
-                    ServiceProtocolVersion::max()->value,
-                ),
-                [self::HEADER_CONTENT_TYPE => 'text/plain'],
-            );
+            return self::unsupportedVersionResponse();
         }
 
         $service = $this->endpoint->service($serviceName);
@@ -127,13 +120,119 @@ final class RequestProcessor
         }
 
         // Request/response transport: hand the driver a state machine with the r/r
-        // defaults (throwing suspender + buffering sink). Streaming wiring lives in the
-        // driver too but is not exposed here — that is Phase 4's streaming server.
+        // defaults (throwing suspender + buffering sink). The bidirectional streaming
+        // wiring lives in {@see driveStreaming} for hosts that keep the channel open.
         return $this->invocationDriver->runRequestResponse(
             new StateMachine($version),
             $service,
             $handler,
             $request->body,
+        );
+    }
+
+    /**
+     * Resolves an invoke request for a bidirectional streaming host. Verifies the
+     * request identity, the body cap, the protocol version and the service/handler —
+     * reusing the exact checks {@see process} applies — and returns either a
+     * {@see StreamingInvocation} for the caller to drive over an open channel, or the
+     * error {@see HttpResponse} (401/404/413/415) to send as-is. The request body is
+     * not consumed here: it streams in once {@see driveStreaming} runs.
+     */
+    public function resolveStreamingInvoke(HttpRequest $request): StreamingInvocation|HttpResponse
+    {
+        $rejection = $this->guard($request);
+        if ($rejection !== null) {
+            return $rejection;
+        }
+
+        $target = self::parseInvokePath(\rtrim($request->path, '/'));
+        if ($request->method !== 'POST' || $target === null) {
+            return HttpResponse::of(404, 'Not Found');
+        }
+
+        $version = ServiceProtocolVersion::fromContentType($request->header(self::HEADER_CONTENT_TYPE) ?? '');
+        if ($version === null) {
+            return self::unsupportedVersionResponse();
+        }
+
+        $service = $this->endpoint->service($target[0]);
+        $handler = $service?->handler($target[1]);
+        if ($service === null || $handler === null) {
+            return HttpResponse::of(404, "Unknown handler {$target[0]}/{$target[1]}");
+        }
+
+        return new StreamingInvocation($service, $handler, $version);
+    }
+
+    /**
+     * Drives a resolved invocation bidirectionally over an open {@see StreamTransport}.
+     * Builds the streaming state machine (a {@see FiberSuspender} so an await parks the
+     * handler fiber, plus a {@see StreamingOutputSink} so frames flow straight to $io)
+     * and hands it to the driver; frames stream out as the handler produces them and the
+     * channel is closed once the terminal frame is on the wire.
+     */
+    public function driveStreaming(StreamingInvocation $target, StreamTransport $io): void
+    {
+        $this->invocationDriver->driveStreaming(
+            new StateMachine($target->version, new FiberSuspender(), new StreamingOutputSink($io)),
+            $target->service,
+            $target->handler,
+            $io,
+        );
+    }
+
+    /**
+     * Shared request gate: opt-in identity verification then the transport-agnostic
+     * body cap. Returns the rejection response, or null when the request may proceed.
+     */
+    private function guard(HttpRequest $request): ?HttpResponse
+    {
+        // Request-identity verification (opt-in): when the endpoint is configured
+        // with one or more `publickeyv1_...` keys, every request — discovery,
+        // invoke and health alike, matching the Rust/shared-core behaviour — must
+        // carry a valid Restate signature. With no key configured this is a no-op.
+        $verifier = $this->endpoint->identityVerifier();
+        if ($verifier !== null && !$verifier->verify($request)) {
+            return HttpResponse::of(401, 'Unauthorized', [self::HEADER_CONTENT_TYPE => 'text/plain']);
+        }
+
+        // Transport-agnostic body cap so every host (Swoole, PSR-15, Lambda) is
+        // protected from unbounded parsing, not just the Swoole server.
+        if (\strlen($request->body) > self::MAX_BODY_BYTES) {
+            return HttpResponse::of(413, 'Request body too large', [self::HEADER_CONTENT_TYPE => 'text/plain']);
+        }
+
+        return null;
+    }
+
+    /**
+     * The transport mode advertised in discovery: the lesser of the endpoint's own mode
+     * and what the host can serve. BIDI_STREAM only when both opt in; otherwise
+     * REQUEST_RESPONSE, so a bidi-configured endpoint stays request/response on a
+     * request/response host.
+     */
+    private function effectiveProtocolMode(): ProtocolMode
+    {
+        if (
+            $this->endpoint->protocolMode() === ProtocolMode::BidiStream
+            && $this->transportCapability === ProtocolMode::BidiStream
+        ) {
+            return ProtocolMode::BidiStream;
+        }
+
+        return ProtocolMode::RequestResponse;
+    }
+
+    private static function unsupportedVersionResponse(): HttpResponse
+    {
+        return HttpResponse::of(
+            415,
+            \sprintf(
+                'Unsupported service protocol version (supported: v%d-v%d)',
+                ServiceProtocolVersion::min()->value,
+                ServiceProtocolVersion::max()->value,
+            ),
+            [self::HEADER_CONTENT_TYPE => 'text/plain'],
         );
     }
 

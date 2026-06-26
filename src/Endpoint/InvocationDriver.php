@@ -7,11 +7,11 @@ namespace Qcodr\Restate\Sdk\Endpoint;
 use Fiber;
 use Psr\Log\LoggerInterface;
 use Qcodr\Restate\Sdk\Context\Clock;
-use Qcodr\Restate\Sdk\Protocol\Message\Future;
 use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 use Qcodr\Restate\Sdk\Serde\Serde;
 use Qcodr\Restate\Sdk\Service\HandlerDefinition;
 use Qcodr\Restate\Sdk\Service\ServiceDefinition;
+use Qcodr\Restate\Sdk\Vm\ParkSignal;
 use Qcodr\Restate\Sdk\Vm\StateMachine;
 
 /**
@@ -90,13 +90,16 @@ final class InvocationDriver
      * await parks the fiber and frames stream straight to $io.
      *
      * The handler runs inside a fiber the driver starts: starting it runs to the first
-     * park or to termination, and each resume lets it consume a freshly delivered
-     * result and run on. Because the streaming sink already wrote every frame to $io
-     * (including the terminal Output/End/Error), there is nothing to drain — the loop
-     * only ensures the channel is closed once the fiber finishes or the runtime hangs
-     * up. A journal mismatch streams an Error and terminates inside the fiber (the
-     * {@see InvocationProcessor} swallows the resulting suspend), so it needs no special
-     * handling here; an EOF before the awaited result arrives suspends gracefully.
+     * park or to termination. A park yields a {@see ParkSignal} carrying the await tree
+     * and its readiness predicate; the driver keeps feeding inbound frames and resumes
+     * the fiber only once the predicate holds, so the parked await runs straight on with
+     * its result guaranteed present (no busy re-check). Because the streaming sink
+     * already wrote every frame to $io (including the terminal Output/End/Error), there
+     * is nothing to drain — the loop only ensures the channel is closed once the fiber
+     * finishes or the runtime hangs up. A journal mismatch streams an Error and
+     * terminates inside the fiber (the {@see InvocationProcessor} swallows the resulting
+     * suspend), so it needs no special handling here; an EOF before the awaited result
+     * arrives suspends gracefully.
      */
     public function driveStreaming(
         StateMachine $vm,
@@ -120,7 +123,8 @@ final class InvocationDriver
             $this->invocationProcessor->process($service, $handler, $vm);
         });
 
-        $tree = $fiber->start(); // run to the first park or to a terminal frame
+        // Run to the first park (a ParkSignal) or straight to a terminal frame (null).
+        $park = $fiber->start();
 
         while (!$fiber->isTerminated()) {
             $chunk = $io->read();
@@ -128,17 +132,21 @@ final class InvocationDriver
                 // EOF before the awaited result arrived: suspend gracefully so the
                 // runtime re-invokes us later with the completion in the journal.
                 $vm->notifyInputClosed();
-                if ($tree instanceof Future) {
-                    $vm->writeSuspension($tree);
+                if ($park instanceof ParkSignal) {
+                    $vm->writeSuspension($park->awaitTree);
                 }
 
                 break;
             }
 
-            // Routes late completions/signals (and skips ack/control frames); the
-            // handler consumes whatever is now ready when the fiber resumes.
+            // Routes late completions/signals (and skips ack/control frames). Resume the
+            // fiber only once the parked await's own predicate is satisfied, otherwise
+            // keep feeding frames — a frame that does not make the await resolvable must
+            // not wake the handler prematurely.
             $vm->notifyInput($chunk);
-            $tree = $fiber->resume();
+            if (!$park instanceof ParkSignal || ($park->isResolved)()) {
+                $park = $fiber->resume();
+            }
         }
 
         $io->close();

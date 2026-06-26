@@ -15,5 +15,14 @@
         <include>
             <directory>src</directory>
         </include>
+        <exclude>
+            <!-- Live-socket transport glue: requires a server extension/library
+                 (ext-swoole, amphp/http-server) and a real connection, so these are
+                 exercised by the cross-SDK conformance suite rather than unit tests.
+                 Mirrored in codecov.yml (ignore) and infection.json5.dist (excludes). -->
+            <file>src/Server/SwooleServer.php</file>
+            <file>src/Server/AmpStreamingServer.php</file>
+            <file>src/Server/AmpStreamTransport.php</file>
+        </exclude>
     </source>
 </phpunit>

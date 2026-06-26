@@ -3,8 +3,12 @@
     "source": {
         "directories": ["src"],
         "excludes": [
-            // ext-swoole transport glue; exercised by the conformance suite, not units.
-            "Server/SwooleServer.php"
+            // Live-socket transport glue (a server extension/library + a real
+            // connection); exercised by the conformance suite, not units. Mirrored in
+            // phpunit.xml.dist (source exclude) and codecov.yml (ignore).
+            "Server/SwooleServer.php",
+            "Server/AmpStreamingServer.php",
+            "Server/AmpStreamTransport.php"
         ]
     },
     "mutators": {

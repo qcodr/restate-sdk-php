@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Vm;
 
+use Closure;
 use Qcodr\Restate\Sdk\Protocol\Message\Future;
 
 /**
@@ -18,8 +19,9 @@ use Qcodr\Restate\Sdk\Protocol\Message\Future;
  */
 final class ThrowingSuspender implements Suspender
 {
-    public function park(StateMachine $vm, Future $awaitTree): void
+    public function park(StateMachine $vm, Future $awaitTree, Closure $isResolved): void
     {
+        // The readiness predicate is irrelevant here: request/response always unwinds.
         $vm->writeSuspension($awaitTree);
 
         throw new SuspendException();

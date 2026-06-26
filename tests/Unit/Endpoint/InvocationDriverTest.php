@@ -120,6 +120,40 @@ final class InvocationDriverTest extends TestCase
         self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(1)));
     }
 
+    public function testSpuriousFrameDoesNotResumeParkedHandlerPrematurely(): void
+    {
+        // The handler parks awaiting the call's invocation id (completion id 1). A frame
+        // that resolves only an unrelated id — here the never-awaited call result, id 2 —
+        // must NOT wake the handler: the predicate stays false, so the driver keeps
+        // reading until the awaited completion arrives.
+        $transport = $this->drive(
+            new CallOptionsService(),
+            'CallOptionsService',
+            'callAndReturnInvocationId',
+            [
+                (new JournalBuilder())->input('')->build(),
+                // Spurious: completes id 2 (the unawaited result), not the awaited id 1.
+                (new JournalBuilder())->callCompletion(2, '"unawaited"')->frames(),
+                // The awaited invocation id finally arrives and resolves the parked await.
+                (new JournalBuilder())->invocationIdCompletion(1, 'inv-xyz')->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
+        // The awaited id (not the spurious frame's value) is returned: had the spurious
+        // frame resumed the now straight-line await, it would have observed an absent
+        // completion and failed instead of returning this value.
+        self::assertSame('"inv-xyz"', $this->successValue($output));
+
+        // The spurious frame (read #1) and the resolving frame (read #2) were both
+        // consumed while only the CallCommand had been written: the handler stayed parked
+        // across the spurious frame and emitted its terminal output only after read #2.
+        self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(1)));
+        self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(2)));
+    }
+
     public function testPromptCancelTurnsParkedAwaitIntoTerminal409(): void
     {
         $transport = $this->drive(

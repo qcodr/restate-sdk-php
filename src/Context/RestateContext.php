@@ -306,98 +306,109 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             throw new InvalidArgumentException('select() requires at least one future');
         }
 
-        // In request/response suspendAny() throws, so this loop runs once; in streaming
-        // it parks, and on resume the readiness scan re-runs and returns the winner.
-        while (true) {
-            for ($index = 0, $count = \count($futures); $index < $count; $index++) {
-                if ($futures[$index]->isReady()) {
-                    return [$index, $futures[$index]->take()];
-                }
+        for ($index = 0, $count = \count($futures); $index < $count; $index++) {
+            if ($futures[$index]->isReady()) {
+                return [$index, $futures[$index]->take()];
             }
-
-            [$completions, $signals] = self::partitionFutures($futures);
-            $this->vm->suspendAny($completions, $signals);
         }
+
+        // No future is ready yet: request/response unwinds inside suspendAny(); streaming
+        // parks until the predicate holds, then the rescan below is guaranteed a winner.
+        [$completions, $signals] = self::partitionFutures($futures);
+        $this->vm->suspendAny(
+            $completions,
+            $signals,
+            fn (): bool => self::anyReady($futures) || $this->vm->isCancelled(),
+        );
+
+        for ($index = 0, $count = \count($futures); $index < $count; $index++) {
+            if ($futures[$index]->isReady()) {
+                return [$index, $futures[$index]->take()];
+            }
+        }
+
+        throw new LogicException('select resumed without a ready future');
     }
 
     public function awaitAll(array $futures): array
     {
-        while (true) {
-            $unresolved = \array_filter($futures, static fn (DurableFuture $future): bool => !$future->isReady());
-            if ($unresolved === []) {
-                return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
-            }
-
-            // Request/response: suspendAll() throws here. Streaming: it parks, then the
-            // loop re-checks until every future is ready.
-            [$completions, $signals] = self::partitionFutures(\array_values($unresolved));
-            $this->vm->suspendAll($completions, $signals);
+        $unresolved = self::unresolved($futures);
+        if ($unresolved !== []) {
+            // Request/response unwinds inside suspendAll(); streaming parks until every
+            // future is ready (or a cancel arrives), then the guard below holds.
+            [$completions, $signals] = self::partitionFutures($unresolved);
+            $this->vm->suspendAll(
+                $completions,
+                $signals,
+                fn (): bool => self::allReady($futures) || $this->vm->isCancelled(),
+            );
         }
+
+        if (!self::allReady($futures)) {
+            throw new LogicException('awaitAll resumed without every future ready');
+        }
+
+        return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
     }
 
     public function awaitAny(DurableFuture ...$futures): mixed
     {
-        while (true) {
-            $unresolved = [];
-            $lastFailure = null;
+        // The predicate is re-evaluated by the driver as late results stream in, so it is
+        // hoisted above the fast-path guard: the futures' readiness changes between the
+        // two evaluations even though the expression is textually identical.
+        $isResolved = fn (): bool => self::anySucceededOrAllReady($futures) || $this->vm->isCancelled();
 
-            foreach ($futures as $future) {
-                if (!$future->isReady()) {
-                    $unresolved[] = $future;
+        if (!self::anySucceededOrAllReady($futures)) {
+            // Request/response unwinds inside suspendAnySucceeded(); streaming parks until
+            // a future succeeds or every future has resolved, then the scan below settles.
+            [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
+            $this->vm->suspendAnySucceeded($completions, $signals, $isResolved);
+        }
 
-                    continue;
-                }
-
-                try {
-                    // A ready, successful future wins immediately (Promise.any).
-                    return $future->take();
-                } catch (TerminalException $failure) {
-                    // A ready, failed future is skipped; remember it in case all fail.
-                    $lastFailure = $failure;
-                }
-            }
-
-            if ($unresolved !== []) {
-                // Request/response: suspendAnySucceeded() throws. Streaming: it parks,
-                // then the loop re-scans for the first success.
-                [$completions, $signals] = self::partitionFutures($unresolved);
-                $this->vm->suspendAnySucceeded($completions, $signals);
-
+        $lastFailure = null;
+        foreach ($futures as $future) {
+            if (!$future->isReady()) {
                 continue;
             }
 
-            // Every future was ready and failed: rethrow the last failure observed.
-            throw $lastFailure ?? new TerminalException('awaitAny requires at least one future');
+            try {
+                // A ready, successful future wins immediately (Promise.any).
+                return $future->take();
+            } catch (TerminalException $failure) {
+                // A ready, failed future is skipped; remember it in case all fail.
+                $lastFailure = $failure;
+            }
         }
+
+        // Every future was ready and failed: rethrow the last failure observed.
+        throw $lastFailure ?? new TerminalException('awaitAny requires at least one future');
     }
 
     public function awaitAllSucceeded(array $futures): array
     {
-        while (true) {
-            $unresolved = [];
-            foreach ($futures as $future) {
-                if (!$future->isReady()) {
-                    $unresolved[] = $future;
+        // Hoisted above the guard for the same reason as awaitAny(): the driver evaluates
+        // it again once late results arrive, when the futures' readiness has changed.
+        $isResolved = fn (): bool => self::anyFailedOrAllSucceeded($futures) || $this->vm->isCancelled();
 
-                    continue;
-                }
-                if ($future->isFailed()) {
-                    // Short-circuit on the first failure (Promise.all): take() rethrows it.
-                    $future->take();
-                }
-            }
-
-            if ($unresolved !== []) {
-                // Request/response: suspendAllSucceeded() throws. Streaming: it parks,
-                // then the loop re-checks until all are ready (or one fails).
-                [$completions, $signals] = self::partitionFutures($unresolved);
-                $this->vm->suspendAllSucceeded($completions, $signals);
-
-                continue;
-            }
-
-            return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
+        if (!self::anyFailedOrAllSucceeded($futures)) {
+            // Request/response unwinds inside suspendAllSucceeded(); streaming parks until
+            // one future fails or all succeed, then the scan below settles.
+            [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
+            $this->vm->suspendAllSucceeded($completions, $signals, $isResolved);
         }
+
+        foreach ($futures as $future) {
+            if ($future->isReady() && $future->isFailed()) {
+                // Short-circuit on the first failure (Promise.all): take() rethrows it.
+                $future->take();
+            }
+        }
+
+        if (!self::allReady($futures)) {
+            throw new LogicException('awaitAllSucceeded resumed without resolution');
+        }
+
+        return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
     }
 
     public function serviceSend(
@@ -574,6 +585,106 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             $this->completionFuture($resultCompletionId),
             $this->invocationIdFuture($invocationIdCompletionId),
         );
+    }
+
+    /**
+     * The futures not yet resolved, in iteration order. Drives both the suspension's
+     * awaited-id set and (via the readiness helpers) the wakeup predicate, so the
+     * predicate evaluates exactly what the post-wakeup scan re-evaluates.
+     *
+     * @param array<array-key, DurableFuture> $futures
+     *
+     * @return list<DurableFuture>
+     */
+    private static function unresolved(array $futures): array
+    {
+        $pending = [];
+        foreach ($futures as $future) {
+            if (!$future->isReady()) {
+                $pending[] = $future;
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Whether any future is ready ({@see select} wakeup: the first ready future wins).
+     *
+     * @param array<array-key, DurableFuture> $futures
+     */
+    private static function anyReady(array $futures): bool
+    {
+        foreach ($futures as $future) {
+            if ($future->isReady()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether every future is ready ({@see awaitAll} wakeup).
+     *
+     * @param array<array-key, DurableFuture> $futures
+     */
+    private static function allReady(array $futures): bool
+    {
+        foreach ($futures as $future) {
+            if (!$future->isReady()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether a future has already succeeded, or every future has resolved
+     * ({@see awaitAny} / Promise.any wakeup: first success wins, else all-failed settles).
+     *
+     * @param array<array-key, DurableFuture> $futures
+     */
+    private static function anySucceededOrAllReady(array $futures): bool
+    {
+        $allReady = true;
+        foreach ($futures as $future) {
+            if (!$future->isReady()) {
+                $allReady = false;
+
+                continue;
+            }
+            if (!$future->isFailed()) {
+                return true; // a ready success short-circuits the race
+            }
+        }
+
+        return $allReady;
+    }
+
+    /**
+     * Whether a future has already failed, or every future has succeeded
+     * ({@see awaitAllSucceeded} / Promise.all wakeup: first failure short-circuits, else
+     * all-succeeded settles).
+     *
+     * @param array<array-key, DurableFuture> $futures
+     */
+    private static function anyFailedOrAllSucceeded(array $futures): bool
+    {
+        $allReady = true;
+        foreach ($futures as $future) {
+            if (!$future->isReady()) {
+                $allReady = false;
+
+                continue;
+            }
+            if ($future->isFailed()) {
+                return true; // a ready failure short-circuits Promise.all immediately
+            }
+        }
+
+        return $allReady; // true only once every future is ready and has succeeded
     }
 
     /**

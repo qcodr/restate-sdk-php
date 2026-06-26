@@ -43,23 +43,37 @@ final class ManifestProtocolModeTest extends TestCase
         self::assertSame('REQUEST_RESPONSE', $this->discover(Endpoint::builder()->bind(new Greeter())->build()));
     }
 
-    public function testDiscoveryEmitsBidiStreamWhenEndpointOptsIn(): void
+    public function testDiscoveryCapsBidiEndpointToRequestResponseOnDefaultTransport(): void
+    {
+        // The per-transport cap: a bidi-configured endpoint served by a default-capability
+        // host (Swoole/PSR-15/Lambda) advertises REQUEST_RESPONSE — only a bidi-capable
+        // transport may advertise BIDI_STREAM.
+        $endpoint = Endpoint::builder()
+            ->bind(new Greeter())
+            ->protocolMode(ProtocolMode::BidiStream)
+            ->build();
+
+        self::assertSame('REQUEST_RESPONSE', $this->discover($endpoint));
+    }
+
+    public function testDiscoveryEmitsBidiStreamWhenEndpointAndTransportBothOptIn(): void
     {
         $endpoint = Endpoint::builder()
             ->bind(new Greeter())
             ->protocolMode(ProtocolMode::BidiStream)
             ->build();
 
-        self::assertSame('BIDI_STREAM', $this->discover($endpoint));
+        self::assertSame('BIDI_STREAM', $this->discover($endpoint, ProtocolMode::BidiStream));
     }
 
     /**
-     * Runs the discovery route end-to-end and returns the emitted `protocolMode`.
+     * Runs the discovery route end-to-end and returns the emitted `protocolMode`,
+     * with the host's transport capability defaulting to request/response.
      */
-    private function discover(Endpoint $endpoint): string
+    private function discover(Endpoint $endpoint, ProtocolMode $capability = ProtocolMode::RequestResponse): string
     {
         $request = new HttpRequest('GET', '/discovery', [], '');
-        $response = (new RequestProcessor($endpoint))->process($request);
+        $response = (new RequestProcessor($endpoint, transportCapability: $capability))->process($request);
 
         self::assertSame(200, $response->status);
 

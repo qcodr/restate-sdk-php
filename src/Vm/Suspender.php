@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Vm;
 
+use Closure;
 use Qcodr\Restate\Sdk\Protocol\Message\Future;
 
 /**
@@ -20,6 +21,12 @@ interface Suspender
      * Parks the invocation on the given (already cancel-guarded) await tree. It either
      * does not return (it threw to unwind the handler) or returns once the driver has
      * fed the awaited result and resumed execution.
+     *
+     * @param Closure(): bool $isResolved the await's own readiness predicate; the
+     *                                    streaming driver resumes the fiber only once it
+     *                                    holds, so the await runs on with its result
+     *                                    guaranteed present. The request/response
+     *                                    suspender ignores it (it unwinds unconditionally).
      */
-    public function park(StateMachine $vm, Future $awaitTree): void;
+    public function park(StateMachine $vm, Future $awaitTree, Closure $isResolved): void;
 }

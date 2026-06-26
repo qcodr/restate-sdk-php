@@ -1,8 +1,10 @@
 # Codecov configuration.
 #
-# SwooleServer is excluded: it is ext-swoole transport glue that requires the
-# extension and a live socket, so it is exercised by the cross-SDK conformance
-# suite (`make conformance`) rather than unit tests. See phpunit.xml.dist.
+# The Server/* transport hosts are excluded: they are live-socket glue that requires
+# a server extension/library (ext-swoole for SwooleServer; amphp/http-server for
+# AmpStreamingServer + AmpStreamTransport) and a real connection, so they are exercised
+# by the cross-SDK conformance suite (`make conformance`) rather than unit tests.
+# See phpunit.xml.dist and infection.json5.dist.
 coverage:
   status:
     project:
@@ -15,6 +17,8 @@ coverage:
 
 ignore:
   - "src/Server/SwooleServer.php"
+  - "src/Server/AmpStreamingServer.php"
+  - "src/Server/AmpStreamTransport.php"
 
 comment:
   layout: "reach, diff, files"
