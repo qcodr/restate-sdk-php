@@ -12,10 +12,10 @@
     },
     "testFramework": "phpunit",
     "tmpDir": "build/infection",
-    // Floors sit below the ~81% covered-MSI baseline to gate regressions while
-    // tolerating run-to-run timing variance (timeouts) between local and CI.
-    "minMsi": 75,
-    "minCoveredMsi": 78,
+    // Floors sit below the ~89% covered-MSI achieved here to gate regressions
+    // while tolerating run-to-run timing variance (timeouts) between local and CI.
+    "minMsi": 83,
+    "minCoveredMsi": 85,
     "logs": {
         "text": "build/infection/infection.log",
         "html": "build/infection/infection.html",

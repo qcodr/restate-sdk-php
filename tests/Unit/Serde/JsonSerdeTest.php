@@ -30,11 +30,16 @@ final class JsonSerdeTest extends TestCase
     public function testSerializeWrapsEncodeFailureAsSerializationException(): void
     {
         $serde = new JsonSerde();
+        $prefix = 'Failed to JSON-encode value: ';
 
-        $this->expectException(SerializationException::class);
-        $this->expectExceptionMessage('Failed to JSON-encode value');
-
-        $serde->serialize(\NAN);
+        try {
+            $serde->serialize(\NAN);
+            self::fail('expected a SerializationException');
+        } catch (SerializationException $e) {
+            // The prefix must lead and the underlying encoder message must follow.
+            self::assertStringStartsWith($prefix, $e->getMessage());
+            self::assertGreaterThan(\strlen($prefix), \strlen($e->getMessage()));
+        }
     }
 
     public function testEmptyBytesDeserializeToNull(): void
@@ -45,11 +50,15 @@ final class JsonSerdeTest extends TestCase
     public function testDeserializeWrapsDecodeFailureAsSerializationException(): void
     {
         $serde = new JsonSerde();
+        $prefix = 'Failed to JSON-decode value: ';
 
-        $this->expectException(SerializationException::class);
-        $this->expectExceptionMessage('Failed to JSON-decode value');
-
-        $serde->deserialize('{not valid json');
+        try {
+            $serde->deserialize('{not valid json');
+            self::fail('expected a SerializationException');
+        } catch (SerializationException $e) {
+            self::assertStringStartsWith($prefix, $e->getMessage());
+            self::assertGreaterThan(\strlen($prefix), \strlen($e->getMessage()));
+        }
     }
 
     public function testScalarTypeHintsCoerceDecodedValue(): void

@@ -7,10 +7,12 @@ namespace Restate\Sdk\Tests\Unit\Context;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Restate\Sdk\Context\Awakeable;
 use Restate\Sdk\Context\CallHandle;
+use Restate\Sdk\Context\Clock;
 use Restate\Sdk\Context\ContextRand;
 use Restate\Sdk\Context\DurableFuture;
 use Restate\Sdk\Context\RestateContext;
@@ -18,17 +20,27 @@ use Restate\Sdk\Context\RetryPolicy;
 use Restate\Sdk\Context\RunOptions;
 use Restate\Sdk\Context\SystemClock;
 use Restate\Sdk\Error\TerminalException;
+use Restate\Sdk\Protocol\Frame;
+use Restate\Sdk\Protocol\Message\Failure;
+use Restate\Sdk\Protocol\Message\Header;
+use Restate\Sdk\Protocol\Message\Value;
 use Restate\Sdk\Protocol\MessageCodec;
 use Restate\Sdk\Protocol\MessageType;
+use Restate\Sdk\Protocol\Protobuf\Reader;
+use Restate\Sdk\Protocol\Protobuf\WireType;
 use Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Restate\Sdk\Serde\JsonSerde;
 use Restate\Sdk\Tests\Support\JournalBuilder;
 use Restate\Sdk\Vm\StateMachine;
 use Restate\Sdk\Vm\SuspendException;
 use RuntimeException;
+use Stringable;
 
 final class RestateContextTest extends TestCase
 {
+    /** A fixed wall-clock instant so timer/delay deadlines decode to exact values. */
+    private const NOW_MILLIS = 1_700_000_000_000;
+
     // --- Invocation metadata ---
 
     public function testExposesInvocationMetadata(): void
@@ -90,10 +102,17 @@ final class RestateContextTest extends TestCase
             // expected
         }
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::RunCommand, MessageType::ProposeRunCompletion, MessageType::Suspension],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        // The proposed completion carries the serialized success value (raw bytes,
+        // field 14) and no failure (field 15).
+        $proposal = self::fields(self::frameOfType($frames, MessageType::ProposeRunCompletion)->payload);
+        self::assertSame('"value"', $proposal[14]);
+        self::assertArrayNotHasKey(15, $proposal);
     }
 
     public function testRunWithTerminalExceptionProposesFailureAndSuspends(): void
@@ -106,10 +125,16 @@ final class RestateContextTest extends TestCase
             // suspension expected; verified through the emitted frames below
         }
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::RunCommand, MessageType::ProposeRunCompletion, MessageType::Suspension],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        // A terminal failure is proposed verbatim (status code and message preserved).
+        $failure = self::proposedFailure($frames);
+        self::assertSame(418, $failure->code);
+        self::assertSame('boom', $failure->message);
     }
 
     public function testRunWithNonSerializableResultFailsTerminally(): void
@@ -124,9 +149,21 @@ final class RestateContextTest extends TestCase
             // expected
         }
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::RunCommand, MessageType::ProposeRunCompletion, MessageType::Suspension],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
+        );
+
+        // The terminal failure prefixes the serde error; the prefix must lead and the
+        // underlying message must still be appended.
+        $failure = self::proposedFailure($frames);
+        self::assertSame(TerminalException::DEFAULT_CODE, $failure->code);
+        self::assertStringStartsWith('run result is not serializable: ', $failure->message);
+        self::assertGreaterThan(
+            \strlen('run result is not serializable: '),
+            \strlen($failure->message),
+            'the underlying serde error must be appended after the prefix',
         );
     }
 
@@ -150,17 +187,24 @@ final class RestateContextTest extends TestCase
             // suspension expected; verified through the emitted frames below
         }
 
+        $frames = $this->frames($vm);
         // Attempts exhausted -> a terminal failure is proposed, then suspension.
         self::assertSame(
             [MessageType::RunCommand, MessageType::ProposeRunCompletion, MessageType::Suspension],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        $failure = self::proposedFailure($frames);
+        self::assertSame(TerminalException::DEFAULT_CODE, $failure->code);
+        self::assertSame('always fails', $failure->message);
     }
 
-    public function testRunRetryPolicyReportsRetryableAttempt(): void
+    public function testRunRetryPolicyRetriesWhileAttemptsRemain(): void
     {
         [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
-        $options = new RunOptions(new RetryPolicy(initialIntervalMillis: 10, maxIntervalMillis: 100, maxAttempts: 5));
+        // maxAttempts 2 with retryCount 0 leaves one attempt: the run must report a
+        // retryable Error, NOT give up with a proposed terminal failure.
+        $options = new RunOptions(new RetryPolicy(initialIntervalMillis: 10, maxIntervalMillis: 100, maxAttempts: 2));
 
         try {
             $ctx->run('step', static fn (): mixed => throw new RuntimeException('transient'), $options);
@@ -168,10 +212,61 @@ final class RestateContextTest extends TestCase
             // suspension expected; verified through the emitted frames below
         }
 
-        // A retryable attempt is reported as an Error frame carrying the backoff.
-        $frames = $this->frameTypes($vm);
-        self::assertSame(MessageType::RunCommand, $frames[0]);
-        self::assertSame(MessageType::Error, $frames[1]);
+        self::assertSame(
+            [MessageType::RunCommand, MessageType::Error],
+            $this->frameTypes($vm),
+        );
+    }
+
+    public function testRunRetryPolicyReportsRetryableAttempt(): void
+    {
+        $error = new RuntimeException('transient');
+        $logger = self::recordingLogger();
+        [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'), logger: $logger);
+        $options = new RunOptions(new RetryPolicy(initialIntervalMillis: 10, maxIntervalMillis: 100, maxAttempts: 5));
+
+        try {
+            $ctx->run('step', static fn (): mixed => throw $error, $options);
+        } catch (SuspendException) {
+            // suspension expected; verified through the emitted frames below
+        }
+
+        $frames = $this->frames($vm);
+        self::assertSame(MessageType::RunCommand, $frames[0]->type());
+
+        // A retryable attempt is reported as an Error frame carrying the message, the
+        // class name (not the full exception, in non-debug mode) and the backoff.
+        $error_frame = self::fields(self::frameOfType($frames, MessageType::Error)->payload);
+        self::assertSame(TerminalException::DEFAULT_CODE, $error_frame[1]);
+        self::assertSame('transient', $error_frame[2]);
+        self::assertSame('RuntimeException', $error_frame[3]);
+        self::assertSame(10, $error_frame[8]);
+
+        // The failure is also logged once, with the prefixed message and the exception.
+        self::assertCount(1, $logger->records);
+        self::assertSame('Durable run failed (retryable): transient', $logger->records[0]['message']);
+        self::assertSame(['exception' => $error], $logger->records[0]['context']);
+    }
+
+    public function testRunRetryableAttemptReportsFullErrorInDebugMode(): void
+    {
+        $error = new RuntimeException('transient');
+        [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'), debug: true);
+        $options = new RunOptions(new RetryPolicy(initialIntervalMillis: 10, maxIntervalMillis: 100, maxAttempts: 5));
+
+        try {
+            $ctx->run('step', static fn (): mixed => throw $error, $options);
+        } catch (SuspendException) {
+            // suspension expected; verified through the emitted frame below
+        }
+
+        // In debug mode the Error carries the full stringified exception, not just the
+        // class name.
+        $error_frame = self::fields(self::frameOfType($this->frames($vm), MessageType::Error)->payload);
+        $stacktrace = $error_frame[3];
+        self::assertIsString($stacktrace);
+        self::assertStringContainsString('RuntimeException', $stacktrace);
+        self::assertStringContainsString('transient', $stacktrace);
     }
 
     // --- Calls (request/response) ---
@@ -202,6 +297,22 @@ final class RestateContextTest extends TestCase
         [, $ctx] = $this->build($this->journalWithReadyCall('raw-bytes'));
 
         self::assertSame('raw-bytes', $ctx->genericCall('Svc', 'k', 'h', 'param'));
+    }
+
+    public function testServiceCallAsyncEncodesRequest(): void
+    {
+        [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
+
+        // Issued live (no journalled command), so the CallCommand is emitted.
+        $ctx->serviceCallAsync('Greeter', 'greet', 'hi', idempotencyKey: 'idem-c', headers: ['h1' => 'v1']);
+
+        $command = self::fields(self::frameOfType($this->frames($vm), MessageType::CallCommand)->payload);
+        self::assertSame('Greeter', $command[1]);
+        self::assertSame('greet', $command[2]);
+        self::assertSame('"hi"', $command[3]);
+        self::assertSame('idem-c', $command[6]);
+        // A service call carries no object key.
+        self::assertArrayNotHasKey(5, $command);
     }
 
     public function testAsyncCallVariantsReturnFutures(): void
@@ -242,13 +353,23 @@ final class RestateContextTest extends TestCase
         self::assertSame([0, 'a'], $ctx->select($first, $second));
     }
 
-    public function testSelectSuspendsWhenNothingReady(): void
+    public function testSelectSuspendsAwaitingTheUnresolvedCompletion(): void
     {
-        [, $ctx] = $this->build((new JournalBuilder())->input('1'));
+        [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
         $future = $ctx->serviceCallAsync('S', 'h', null);
 
-        $this->expectException(SuspendException::class);
-        $ctx->select($future);
+        try {
+            $ctx->select($future);
+            self::fail('expected suspension');
+        } catch (SuspendException) {
+            // expected
+        }
+
+        // The suspension's await tree must wait on the pending completion id (and treat
+        // it as a completion, not a signal).
+        $inner = self::innerAwaitTree($this->frames($vm));
+        self::assertSame([$future->id()], $inner['completions']);
+        self::assertSame([], $inner['signals']);
     }
 
     public function testAwaitAllReturnsEveryValueWhenReady(): void
@@ -280,12 +401,25 @@ final class RestateContextTest extends TestCase
         self::assertSame('win', $ctx->awaitAny($future));
     }
 
+    public function testAwaitAnySkipsUnresolvedFutureToReturnLaterReadySuccess(): void
+    {
+        [, $ctx] = $this->build($this->journalWithFirstPendingSecondReadyCall('"value"'));
+        $first = $ctx->serviceCallAsync('S', 'h', null);
+        $second = $ctx->serviceCallAsync('S', 'h', null);
+
+        // The first future is unresolved; awaitAny must keep scanning and return the
+        // second, already-ready success rather than stopping at the first gap.
+        self::assertSame('value', $ctx->awaitAny($first, $second));
+    }
+
     public function testAwaitAnyThrowsLastFailureWhenAllReadyFutured(): void
     {
         [, $ctx] = $this->build($this->journalWithFailedCall('nope'));
         $future = $ctx->serviceCallAsync('S', 'h', null);
 
+        // The actual failure must be rethrown, not a generic placeholder.
         $this->expectException(TerminalException::class);
+        $this->expectExceptionMessage('nope');
         $ctx->awaitAny($future);
     }
 
@@ -307,6 +441,30 @@ final class RestateContextTest extends TestCase
         $ctx->awaitAllSucceeded([$future]);
     }
 
+    public function testAwaitAllSucceededShortCircuitsOnFailureAfterUnresolved(): void
+    {
+        [, $ctx] = $this->build($this->journalWithFirstPendingSecondFailedCall('bad'));
+        $first = $ctx->serviceCallAsync('S', 'h', null);
+        $second = $ctx->serviceCallAsync('S', 'h', null);
+
+        // The unresolved first future must not abort the scan: the ready failure that
+        // follows it still short-circuits with a TerminalException (not a suspension).
+        $this->expectException(TerminalException::class);
+        $ctx->awaitAllSucceeded([$first, $second]);
+    }
+
+    public function testAwaitAllSucceededShortCircuitsOnFailureBeforeUnresolved(): void
+    {
+        [, $ctx] = $this->build($this->journalWithFirstFailedSecondPendingCall('bad'));
+        $first = $ctx->serviceCallAsync('S', 'h', null);
+        $second = $ctx->serviceCallAsync('S', 'h', null);
+
+        // A ready failure must throw immediately, before reaching the unresolved future
+        // that would otherwise cause a suspension.
+        $this->expectException(TerminalException::class);
+        $ctx->awaitAllSucceeded([$first, $second]);
+    }
+
     public function testAwaitAllSucceededReturnsValuesWhenAllReady(): void
     {
         [, $ctx] = $this->build($this->journalWithReadyCall('"ok"'));
@@ -326,18 +484,142 @@ final class RestateContextTest extends TestCase
 
     // --- Sends (one-way) ---
 
-    public function testSendVariantsEmitOneWayCalls(): void
+    public function testSendVariantsEncodeTargetWithImmediateInvokeTime(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        $ctx->serviceSend('Svc', 'greet', 'hi', idempotencyKey: 'idem-s');
+        $ctx->objectSend('Obj', 'k1', 'add', 5);
+        $ctx->workflowSend('Wf', 'k2', 'run', null, headers: ['x-trace' => 'v']);
+
+        $frames = $this->frames($vm);
+        self::assertSame(
+            [MessageType::OneWayCallCommand, MessageType::OneWayCallCommand, MessageType::OneWayCallCommand],
+            $this->typesOf($frames),
+        );
+
+        $service = self::fields($frames[0]->payload);
+        self::assertSame('Svc', $service[1]);
+        self::assertSame('greet', $service[2]);
+        self::assertSame('"hi"', $service[3]);
+        self::assertSame('idem-s', $service[7]);
+        self::assertSame(0, $service[4] ?? 0, 'an undelayed service send fires as soon as possible');
+
+        $object = self::fields($frames[1]->payload);
+        self::assertSame('Obj', $object[1]);
+        self::assertSame('add', $object[2]);
+        self::assertSame('5', $object[3]);
+        self::assertSame('k1', $object[6]);
+        self::assertSame(0, $object[4] ?? 0, 'an undelayed object send fires as soon as possible');
+
+        $workflow = self::fields($frames[2]->payload);
+        self::assertSame('Wf', $workflow[1]);
+        self::assertSame('run', $workflow[2]);
+        self::assertSame('null', $workflow[3]);
+        self::assertSame('k2', $workflow[6]);
+        self::assertSame(0, $workflow[4] ?? 0, 'an undelayed workflow send fires as soon as possible');
+    }
+
+    public function testDelayedSendEncodesInvokeTimeFromClock(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        // 1.5s -> exactly 1500ms; the fractional values straddle the rounding boundary
+        // so floor/ceil substitutions are observable (1.4ms rounds down, 1.5ms up).
+        $ctx->objectSend('O', 'k', 'h', null, delaySeconds: 1.5);
+        $ctx->objectSend('O', 'k', 'h', null, delaySeconds: 0.0014);
+        $ctx->objectSend('O', 'k', 'h', null, delaySeconds: 0.0015);
+
+        $frames = $this->frames($vm);
+        self::assertSame(self::NOW_MILLIS + 1500, self::fields($frames[0]->payload)[4]);
+        self::assertSame(self::NOW_MILLIS + 1, self::fields($frames[1]->payload)[4]);
+        self::assertSame(self::NOW_MILLIS + 2, self::fields($frames[2]->payload)[4]);
+    }
+
+    public function testOutgoingHeadersAreEncodedFaithfully(): void
     {
         [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
 
-        $ctx->serviceSend('S', 'h', null);
-        $ctx->objectSend('O', 'k', 'h', null, delaySeconds: 1.5);
-        $ctx->workflowSend('W', 'k', 'h', null, headers: ['x-trace' => 'v']);
+        // Two headers exercise the full list: a truncation to one must be observable.
+        $ctx->workflowSend('Wf', 'k', 'h', null, headers: ['x-a' => 'one', 'x-b' => 'two']);
 
-        self::assertSame(
-            [MessageType::OneWayCallCommand, MessageType::OneWayCallCommand, MessageType::OneWayCallCommand],
-            $this->frameTypes($vm),
+        $command = self::frameOfType($this->frames($vm), MessageType::OneWayCallCommand);
+        $headers = \array_map(
+            static fn (string $bytes): Header => Header::decode($bytes),
+            self::repeated($command->payload, 5),
         );
+
+        self::assertCount(2, $headers);
+        self::assertSame('x-a', $headers[0]->key);
+        self::assertSame('one', $headers[0]->value);
+        self::assertSame('x-b', $headers[1]->key);
+        self::assertSame('two', $headers[1]->value);
+    }
+
+    public function testGenericSendEncodesInvokeTimeAndPayload(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        try {
+            // No journalled completion, so the command is emitted before the await
+            // suspends; the raw parameter passes through untouched (no serde).
+            $ctx->genericSend('Svc', 'k', 'h', 'param', 1000);
+            self::fail('expected suspension');
+        } catch (SuspendException) {
+            // expected
+        }
+
+        $command = self::fields(self::frameOfType($this->frames($vm), MessageType::OneWayCallCommand)->payload);
+        self::assertSame('Svc', $command[1]);
+        self::assertSame('h', $command[2]);
+        self::assertSame('param', $command[3]);
+        self::assertSame('k', $command[6]);
+        self::assertSame(self::NOW_MILLIS + 1000, $command[4]);
+    }
+
+    public function testGenericSendWithZeroDelayFiresImmediately(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        try {
+            $ctx->genericSend('Svc', 'k', 'h', 'param', 0);
+            self::fail('expected suspension');
+        } catch (SuspendException) {
+            // expected
+        }
+
+        $command = self::fields(self::frameOfType($this->frames($vm), MessageType::OneWayCallCommand)->payload);
+        self::assertSame(0, $command[4] ?? 0, 'a zero delay must not add an invoke time');
+    }
+
+    public function testGenericSendWithoutDelayFiresImmediately(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        try {
+            $ctx->genericSend('Svc', 'k', 'h', 'param');
+            self::fail('expected suspension');
+        } catch (SuspendException) {
+            // expected
+        }
+
+        $command = self::fields(self::frameOfType($this->frames($vm), MessageType::OneWayCallCommand)->payload);
+        self::assertSame(0, $command[4] ?? 0, 'an absent delay must not add an invoke time');
     }
 
     public function testGenericSendReturnsInvocationId(): void
@@ -358,7 +640,13 @@ final class RestateContextTest extends TestCase
 
         $ctx->cancel('inv-target');
 
-        self::assertSame([MessageType::SendSignalCommand], $this->frameTypes($vm));
+        $frames = $this->frames($vm);
+        self::assertSame([MessageType::SendSignalCommand], $this->typesOf($frames));
+
+        // The cancel targets the given invocation with the built-in CANCEL signal idx.
+        $signal = self::fields($frames[0]->payload);
+        self::assertSame('inv-target', $signal[1]);
+        self::assertSame(1, $signal[2]);
     }
 
     // --- Awakeables ---
@@ -373,6 +661,26 @@ final class RestateContextTest extends TestCase
         self::assertStringStartsWith('prom_1', $awakeable->id());
     }
 
+    public function testAwakeableAwaitSuspendsAsSignal(): void
+    {
+        [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
+
+        $awakeable = $ctx->awakeable();
+
+        try {
+            $awakeable->await();
+            self::fail('expected suspension');
+        } catch (SuspendException) {
+            // expected
+        }
+
+        // An awakeable is completed via a signal, so the await tree must wait on a
+        // signal id, never a completion id.
+        $inner = self::innerAwaitTree($this->frames($vm));
+        self::assertSame([], $inner['completions']);
+        self::assertNotSame([], $inner['signals']);
+    }
+
     public function testResolveAndRejectAwakeableEmitCompletionCommands(): void
     {
         [$vm, $ctx] = $this->build((new JournalBuilder())->input('1'));
@@ -380,10 +688,27 @@ final class RestateContextTest extends TestCase
         $ctx->resolveAwakeable('prom_1abc', 'value');
         $ctx->rejectAwakeable('prom_1abc', 'denied');
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::CompleteAwakeableCommand, MessageType::CompleteAwakeableCommand],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        // Resolve addresses the awakeable id and carries the serialized value (field 2).
+        $resolve = self::fields($frames[0]->payload);
+        self::assertSame('prom_1abc', $resolve[1]);
+        $resolveValue = $resolve[2];
+        self::assertIsString($resolveValue);
+        self::assertSame('"value"', Value::decode($resolveValue)->content);
+        self::assertArrayNotHasKey(3, $resolve, 'a resolved awakeable carries no failure');
+
+        // Reject carries the failure (field 3) instead of a value.
+        $reject = self::fields($frames[1]->payload);
+        self::assertSame('prom_1abc', $reject[1]);
+        $rejectFailure = $reject[3];
+        self::assertIsString($rejectFailure);
+        self::assertSame('denied', Failure::decode($rejectFailure)->message);
+        self::assertArrayNotHasKey(2, $reject, 'a rejected awakeable carries no value');
     }
 
     // --- State ---
@@ -405,10 +730,21 @@ final class RestateContextTest extends TestCase
         $ctx->clear('count');
         $ctx->clearAll();
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::SetStateCommand, MessageType::ClearStateCommand, MessageType::ClearAllStateCommand],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        // set carries the key (field 1) and the serialized value wrapped in a Value (3).
+        $set = self::fields($frames[0]->payload);
+        self::assertSame('count', $set[1]);
+        $setValue = $set[3];
+        self::assertIsString($setValue);
+        self::assertSame('1', Value::decode($setValue)->content);
+
+        // clear carries the key it removes.
+        self::assertSame('count', self::fields($frames[1]->payload)[1]);
     }
 
     public function testSharedContextRejectsStateMutation(): void
@@ -417,6 +753,14 @@ final class RestateContextTest extends TestCase
 
         $this->expectException(LogicException::class);
         $ctx->set('count', 1);
+    }
+
+    public function testSharedContextRejectsClear(): void
+    {
+        [, $ctx] = $this->build((new JournalBuilder())->input('1'), writable: false);
+
+        $this->expectException(LogicException::class);
+        $ctx->clear('count');
     }
 
     public function testSharedContextRejectsClearAll(): void
@@ -460,10 +804,25 @@ final class RestateContextTest extends TestCase
         $ctx->resolvePromise('p', 'v');
         $ctx->rejectPromise('p', 'reason');
 
+        $frames = $this->frames($vm);
         self::assertSame(
             [MessageType::CompletePromiseCommand, MessageType::CompletePromiseCommand],
-            $this->frameTypes($vm),
+            $this->typesOf($frames),
         );
+
+        // Resolve carries the promise name (field 1) and the serialized value (field 2).
+        $resolve = self::fields($frames[0]->payload);
+        self::assertSame('p', $resolve[1]);
+        $resolveValue = $resolve[2];
+        self::assertIsString($resolveValue);
+        self::assertSame('"v"', Value::decode($resolveValue)->content);
+
+        // Reject carries the promise name and the failure (field 3).
+        $reject = self::fields($frames[1]->payload);
+        self::assertSame('p', $reject[1]);
+        $rejectFailure = $reject[3];
+        self::assertIsString($rejectFailure);
+        self::assertSame('reason', Failure::decode($rejectFailure)->message);
     }
 
     // --- Timers & state reads ---
@@ -484,6 +843,24 @@ final class RestateContextTest extends TestCase
         );
     }
 
+    public function testSleepCommandEncodesWakeUpTimeFromClock(): void
+    {
+        [$vm, $ctx] = $this->build(
+            (new JournalBuilder())->input('1'),
+            clock: $this->fixedClock(self::NOW_MILLIS),
+        );
+
+        try {
+            $ctx->sleep(1.5);
+        } catch (SuspendException) {
+            // expected
+        }
+
+        // The wake-up deadline is now + 1500ms, computed from the injected clock.
+        $sleep = self::fields(self::frameOfType($this->frames($vm), MessageType::SleepCommand)->payload);
+        self::assertSame(self::NOW_MILLIS + 1500, $sleep[1]);
+    }
+
     public function testGetReturnsDeserializedState(): void
     {
         [, $ctx] = $this->build((new JournalBuilder(stateMap: ['count' => '5']))->input('1'));
@@ -496,24 +873,65 @@ final class RestateContextTest extends TestCase
     /**
      * @return array{0: StateMachine, 1: RestateContext}
      */
-    private function build(JournalBuilder $builder, bool $writable = true): array
-    {
+    private function build(
+        JournalBuilder $builder,
+        bool $writable = true,
+        ?Clock $clock = null,
+        bool $debug = false,
+        ?LoggerInterface $logger = null,
+    ): array {
         $vm = new StateMachine(ServiceProtocolVersion::V7);
         $vm->notifyInput($builder->build());
         $vm->notifyInputClosed();
         $input = $vm->sysInput();
 
-        $ctx = new RestateContext(
-            $vm,
-            $input,
-            new JsonSerde(),
-            new SystemClock(),
-            ContextRand::fromSeed($input->randomSeed),
-            writable: $writable,
-            logger: new NullLogger(),
-        );
+        $serde = new JsonSerde();
+        $rand = ContextRand::fromSeed($input->randomSeed);
+        $clock ??= new SystemClock();
+        $logger ??= new NullLogger();
+
+        // The non-debug case leans on the constructor's own default so that flipping it
+        // is observable; only the debug case passes the flag explicitly.
+        $ctx = $debug
+            ? new RestateContext($vm, $input, $serde, $clock, $rand, writable: $writable, logger: $logger, debug: true)
+            : new RestateContext($vm, $input, $serde, $clock, $rand, writable: $writable, logger: $logger);
 
         return [$vm, $ctx];
+    }
+
+    private function fixedClock(int $millis): Clock
+    {
+        return new class ($millis) implements Clock {
+            public function __construct(private readonly int $millis)
+            {
+            }
+
+            public function nowMillis(): int
+            {
+                return $this->millis;
+            }
+        };
+    }
+
+    /**
+     * A logger that captures every record so emitted log calls can be asserted.
+     *
+     * @return AbstractLogger&object{records: list<array{message: string, context: array<array-key, mixed>}>}
+     */
+    private static function recordingLogger(): AbstractLogger
+    {
+        return new class () extends AbstractLogger {
+            /** @var list<array{message: string, context: array<array-key, mixed>}> */
+            public array $records = [];
+
+            /**
+             * @param array<array-key, mixed> $context
+             */
+            public function log($level, string|Stringable $message, array $context = []): void
+            {
+                $this->records[] = ['message' => (string) $message, 'context' => $context];
+            }
+        };
     }
 
     private function journalWithReadyCall(string $resultValue): JournalBuilder
@@ -542,14 +960,205 @@ final class RestateContextTest extends TestCase
             ->callCompletion(4, $secondValue);
     }
 
+    private function journalWithFirstPendingSecondReadyCall(string $secondValue): JournalBuilder
+    {
+        return (new JournalBuilder())
+            ->input('1')
+            ->command(MessageType::CallCommand)
+            ->command(MessageType::CallCommand)
+            ->callCompletion(4, $secondValue);
+    }
+
+    private function journalWithFirstPendingSecondFailedCall(string $message): JournalBuilder
+    {
+        return (new JournalBuilder())
+            ->input('1')
+            ->command(MessageType::CallCommand)
+            ->command(MessageType::CallCommand)
+            ->failedCallCompletion(4, $message);
+    }
+
+    private function journalWithFirstFailedSecondPendingCall(string $message): JournalBuilder
+    {
+        return (new JournalBuilder())
+            ->input('1')
+            ->command(MessageType::CallCommand)
+            ->failedCallCompletion(2, $message)
+            ->command(MessageType::CallCommand);
+    }
+
+    /**
+     * @return list<Frame>
+     */
+    private function frames(StateMachine $vm): array
+    {
+        return MessageCodec::decodeAll($vm->takeOutput());
+    }
+
     /**
      * @return list<MessageType|null>
      */
     private function frameTypes(StateMachine $vm): array
     {
-        return \array_map(
-            static fn ($frame): ?MessageType => $frame->type(),
-            MessageCodec::decodeAll($vm->takeOutput()),
-        );
+        return $this->typesOf($this->frames($vm));
+    }
+
+    /**
+     * @param list<Frame> $frames
+     *
+     * @return list<MessageType|null>
+     */
+    private function typesOf(array $frames): array
+    {
+        return \array_map(static fn (Frame $frame): ?MessageType => $frame->type(), $frames);
+    }
+
+    /**
+     * @param list<Frame> $frames
+     */
+    private static function frameOfType(array $frames, MessageType $type): Frame
+    {
+        foreach ($frames as $frame) {
+            if ($frame->type() === $type) {
+                return $frame;
+            }
+        }
+
+        self::fail(\sprintf('no %s frame was emitted', $type->name));
+    }
+
+    /**
+     * @param list<Frame> $frames
+     */
+    private static function proposedFailure(array $frames): Failure
+    {
+        $proposal = self::fields(self::frameOfType($frames, MessageType::ProposeRunCompletion)->payload);
+        $failureBytes = $proposal[15];
+        self::assertIsString($failureBytes);
+
+        return Failure::decode($failureBytes);
+    }
+
+    /**
+     * Decodes the single nested await point inside a suspension frame, peeling off the
+     * outer cancel-aware wrapper the state machine adds.
+     *
+     * @param list<Frame> $frames
+     *
+     * @return array{completions: list<int>, signals: list<int>, named: list<string>, nested: list<string>, combinator: int}
+     */
+    private static function innerAwaitTree(array $frames): array
+    {
+        $suspension = self::frameOfType($frames, MessageType::Suspension);
+        $outerBytes = self::fields($suspension->payload)[4];
+        self::assertIsString($outerBytes);
+
+        $outer = self::decodeFuture($outerBytes);
+        self::assertCount(1, $outer['nested']);
+
+        return self::decodeFuture($outer['nested'][0]);
+    }
+
+    /**
+     * Decodes a protobuf message into a field map. Repeated fields collapse to the last
+     * occurrence; use {@see repeated} when every occurrence matters.
+     *
+     * @return array<int, int|string>
+     */
+    private static function fields(string $payload): array
+    {
+        $reader = new Reader($payload);
+        $fields = [];
+        while (!$reader->atEnd()) {
+            [$field, $wire] = $reader->readTag();
+            if ($wire === WireType::VARINT) {
+                $fields[$field] = $reader->readVarint();
+            } elseif ($wire === WireType::LENGTH_DELIMITED) {
+                $fields[$field] = $reader->readLengthDelimited();
+            } else {
+                $reader->skip($wire);
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @return list<string> the raw bytes of every occurrence of the length-delimited field
+     */
+    private static function repeated(string $payload, int $field): array
+    {
+        $reader = new Reader($payload);
+        $values = [];
+        while (!$reader->atEnd()) {
+            [$current, $wire] = $reader->readTag();
+            if ($wire === WireType::LENGTH_DELIMITED) {
+                $bytes = $reader->readLengthDelimited();
+                if ($current === $field) {
+                    $values[] = $bytes;
+                }
+            } else {
+                $reader->skip($wire);
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * @return array{completions: list<int>, signals: list<int>, named: list<string>, nested: list<string>, combinator: int}
+     */
+    private static function decodeFuture(string $bytes): array
+    {
+        $reader = new Reader($bytes);
+        $completions = [];
+        $signals = [];
+        $named = [];
+        $nested = [];
+        $combinator = 0;
+        while (!$reader->atEnd()) {
+            [$field, $wire] = $reader->readTag();
+            switch ($field) {
+                case 1:
+                    $completions = self::unpackVarints($reader->readLengthDelimited());
+                    break;
+                case 2:
+                    $signals = self::unpackVarints($reader->readLengthDelimited());
+                    break;
+                case 3:
+                    $named[] = $reader->readLengthDelimited();
+                    break;
+                case 4:
+                    $nested[] = $reader->readLengthDelimited();
+                    break;
+                case 5:
+                    $combinator = $reader->readVarint();
+                    break;
+                default:
+                    $reader->skip($wire);
+            }
+        }
+
+        return [
+            'completions' => $completions,
+            'signals' => $signals,
+            'named' => $named,
+            'nested' => $nested,
+            'combinator' => $combinator,
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private static function unpackVarints(string $packed): array
+    {
+        $reader = new Reader($packed);
+        $values = [];
+        while (!$reader->atEnd()) {
+            $values[] = $reader->readVarint();
+        }
+
+        return $values;
     }
 }

@@ -48,6 +48,26 @@ final class IdentitySigner
         return $message . '.' . self::base64UrlEncode($signature);
     }
 
+    /**
+     * Mints a JWT whose payload is the given raw JSON string, signed with this
+     * signer's key. Unlike {@see jwt()}, the payload need not be a JSON object
+     * (e.g. a bare scalar like `5`), which lets tests exercise the
+     * "payload did not decode to an object" rejection path with a genuine
+     * signature attached.
+     *
+     * @param array<string, mixed>|null $header replaces the default EdDSA header
+     */
+    public function jwtRaw(string $rawPayloadJson, ?array $header = null): string
+    {
+        $header ??= ['typ' => 'JWT', 'alg' => 'EdDSA', 'kid' => $this->publicKeyString];
+
+        $message = self::base64UrlEncode(self::json($header))
+            . '.' . self::base64UrlEncode($rawPayloadJson);
+        $signature = \sodium_crypto_sign_detached($message, $this->secretKey);
+
+        return $message . '.' . self::base64UrlEncode($signature);
+    }
+
     /** @param array<string, mixed> $value */
     private static function json(array $value): string
     {

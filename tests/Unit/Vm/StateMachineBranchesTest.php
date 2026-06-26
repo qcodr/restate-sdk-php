@@ -6,6 +6,8 @@ namespace Restate\Sdk\Tests\Unit\Vm;
 
 use PHPUnit\Framework\TestCase;
 use Restate\Sdk\Error\CancelledException;
+use Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
+use Restate\Sdk\Protocol\Message\Failure;
 use Restate\Sdk\Protocol\MessageHeader;
 use Restate\Sdk\Protocol\MessageType;
 use Restate\Sdk\Protocol\Protobuf\Writer;
@@ -172,6 +174,114 @@ final class StateMachineBranchesTest extends TestCase
         $vm->sysEnd();
 
         self::assertSame(VmState::Closed, $vm->state());
+    }
+
+    // --- Parsing accumulation and framing ---
+
+    public function testInputArrivingInChunksIsAccumulated(): void
+    {
+        $journal = (new JournalBuilder())->input('"hi"')->build();
+        $head = \substr($journal, 0, -1);
+        $tail = \substr($journal, -1);
+
+        $vm = new StateMachine(ServiceProtocolVersion::V7);
+        $vm->notifyInput($head);
+        self::assertFalse($vm->isReadyToExecute(), 'not ready until the final byte of the journal arrives');
+
+        $vm->notifyInput($tail);
+        $vm->notifyInputClosed();
+        self::assertTrue($vm->isReadyToExecute(), 'the two chunks are concatenated into a complete journal');
+        self::assertSame('"hi"', $vm->sysInput()->body);
+    }
+
+    public function testRejectsNonStartFirstFrame(): void
+    {
+        $payload = (new Writer())->writeBytesPresent(1, 'x')->toString();
+        $frame = (new MessageHeader(MessageType::InputCommand->value, \strlen($payload)))->encode() . $payload;
+        $vm = new StateMachine(ServiceProtocolVersion::V7);
+
+        $this->expectException(ProtocolException::class);
+        $this->expectExceptionMessage('Expected StartMessage as the first frame');
+        $vm->notifyInput($frame);
+    }
+
+    public function testKnownEntriesExactlyAtMaximumIsAccepted(): void
+    {
+        // The boundary value (MAX_KNOWN_ENTRIES) must pass the guard; only strictly
+        // larger counts are rejected. The journal frames have not arrived, so the
+        // machine is simply not-ready — never "exceeds the maximum".
+        $vm = new StateMachine(ServiceProtocolVersion::V7);
+        $vm->notifyInput($this->startFrame(100_000));
+
+        self::assertFalse($vm->isReadyToExecute());
+    }
+
+    public function testControlFramesInTheJournalAreNotRoutedAsCompletions(): void
+    {
+        // A control frame (ProposeRunCompletionAck) inside the journal is ignored —
+        // never decoded and routed as a notification — even though its bytes happen
+        // to parse as a Notification carrying completion id 42.
+        $controlPayload = (new Writer())->writeUint32Present(1, 42)->toString();
+        $journal = (new JournalBuilder())
+            ->input('1')
+            ->command(MessageType::ProposeRunCompletionAck, $controlPayload)
+            ->build();
+        $vm = $this->machine($journal);
+
+        self::assertTrue($vm->isReadyToExecute());
+        self::assertFalse($vm->isCompletionReady(42), 'control frames are ignored, not routed into the completion table');
+    }
+
+    // --- Guard: sys* calls require a parsed journal ---
+
+    public function testSysCallsBeforeParsingThrowNotReady(): void
+    {
+        $calls = [
+            'sysInput' => static fn (StateMachine $vm) => $vm->sysInput(),
+            'sysCall' => static fn (StateMachine $vm) => $vm->sysCall('Svc', 'h', '', 'x'),
+            'sysOneWayCall' => static fn (StateMachine $vm) => $vm->sysOneWayCall('Svc', 'h', '', 'x'),
+            'sysRun' => static fn (StateMachine $vm) => $vm->sysRun('step'),
+            'sysGetPromise' => static fn (StateMachine $vm) => $vm->sysGetPromise('p'),
+            'sysPeekPromise' => static fn (StateMachine $vm) => $vm->sysPeekPromise('p'),
+            'sysResolvePromise' => static fn (StateMachine $vm) => $vm->sysResolvePromise('p', 'v'),
+            'sysRejectPromise' => static fn (StateMachine $vm) => $vm->sysRejectPromise('p', new Failure(500, 'boom')),
+            'sysCompleteAwakeable' => static fn (StateMachine $vm) => $vm->sysCompleteAwakeable(CompleteAwakeableCommand::resolve('prom_1abc', 'v')),
+            'sysCancel' => static fn (StateMachine $vm) => $vm->sysCancel('inv-2'),
+        ];
+
+        foreach ($calls as $label => $call) {
+            $vm = new StateMachine(ServiceProtocolVersion::V7);
+            try {
+                $call($vm);
+                self::fail("{$label} must fail before the journal is parsed");
+            } catch (ProtocolException $exception) {
+                self::assertStringContainsString(
+                    'not ready to execute',
+                    $exception->getMessage(),
+                    "{$label} should report that the state machine is not ready",
+                );
+            }
+        }
+    }
+
+    // --- Publicly observable predicates ---
+
+    public function testIsCancelledIsPubliclyAccessible(): void
+    {
+        $cancelled = $this->machine((new JournalBuilder())->input('1')->cancelSignal()->build());
+        self::assertTrue($cancelled->isCancelled(), 'a CANCEL signal in the journal marks the invocation cancelled');
+
+        $live = $this->machine((new JournalBuilder())->input('1')->build());
+        self::assertFalse($live->isCancelled());
+    }
+
+    public function testIsProcessingIsPubliclyAccessible(): void
+    {
+        $vm = $this->machine((new JournalBuilder())->input('1')->build());
+
+        self::assertFalse($vm->isProcessing(), 'still replaying the input command');
+        $vm->sysInput();
+        self::assertTrue($vm->isProcessing(), 'past the journal: now processing fresh commands');
     }
 
     // --- Helpers ---
