@@ -1,5 +1,18 @@
 # Restate PHP SDK
 
+[![CI](https://github.com/qcodr/restate-sdk-php/actions/workflows/ci.yml/badge.svg)](https://github.com/qcodr/restate-sdk-php/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/qcodr/restate-sdk-php/branch/main/graph/badge.svg)](https://codecov.io/gh/qcodr/restate-sdk-php)
+[![PHPStan level max](https://img.shields.io/badge/PHPStan-level%20max-brightgreen.svg)](phpstan.neon)
+[![Psalm type coverage](https://shepherd.dev/github/qcodr/restate-sdk-php/coverage.svg)](https://shepherd.dev/github/qcodr/restate-sdk-php)
+[![Latest Stable Version](https://img.shields.io/packagist/v/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
+[![Total Downloads](https://img.shields.io/packagist/dt/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
+[![PHP Version](https://img.shields.io/packagist/php-v/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+<!-- Code quality grade — connect the repo on https://app.codacy.com, then replace
+     CODACY_PROJECT_ID with the project id from the badge snippet and uncomment:
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/CODACY_PROJECT_ID)](https://app.codacy.com/gh/qcodr/restate-sdk-php/dashboard)
+-->
+
 A pure-PHP SDK for [Restate](https://restate.dev) — durable execution for
 **Services**, **Virtual Objects**, and **Workflows**. It mirrors the
 [Rust SDK](https://github.com/restatedev/sdk-rust) surface with idiomatic PHP:
