@@ -67,8 +67,14 @@ final class RequestIdentityVerifierTest extends TestCase
         $verifier = RequestIdentityVerifier::fromKeys([$signer->publicKeyString]);
 
         $jwt = $signer->jwt('/discover');
-        // Flip the last character of the JWT to corrupt the signature segment.
-        $tampered = \substr($jwt, 0, -1) . ($jwt[-1] === 'A' ? 'B' : 'A');
+        // Corrupt the signature by flipping a fully-significant character. The
+        // final base64url char of a 64-byte Ed25519 signature carries only 2
+        // significant bits (the other 4 are dropped as padding on decode), so
+        // flipping it can be a no-op; mutate the first signature char instead,
+        // which always changes the decoded bytes.
+        [$header, $payload, $signature] = \explode('.', $jwt);
+        $signature[0] = $signature[0] === 'A' ? 'B' : 'A';
+        $tampered = $header . '.' . $payload . '.' . $signature;
 
         $request = $this->signedRequest('GET', '/discover', $tampered);
 
