@@ -7,7 +7,7 @@
 INGRESS_URL ?= http://localhost:8080
 ADMIN_URL   ?= http://localhost:9070
 
-.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast infection check examples
+.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast infection bench bench-e2e check examples
 
 install:
 	composer install
@@ -42,6 +42,16 @@ sast:
 # Needs a coverage driver (pcov/xdebug); fails below the thresholds in infection.json5.dist.
 infection:
 	vendor/bin/infection --threads=max --no-progress
+
+# --- Benchmarks (see docs/BENCHMARKS.md) -----------------------------------
+
+# SDK hot-path micro-benchmark: pure PHP, no I/O, reproducible anywhere.
+bench:
+	php benchmarks/micro.php
+
+# End-to-end load/latency/memory through Restate + Swoole (needs Docker).
+bench-e2e:
+	benchmarks/e2e/run.sh
 
 # The local pre-commit gate: lint + SAST + unit tests.
 check: lint sast test-unit
