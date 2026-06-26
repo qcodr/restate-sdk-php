@@ -1,0 +1,64 @@
+name: Release
+
+# Tag a release to publish to Packagist:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tagged commit is verified, then Packagist is told to fetch the new tag.
+# Packagist reads the package contents from the git tag itself; this workflow
+# only triggers the update (the package must be submitted on packagist.org once).
+#
+# Required repository secrets:
+#   PACKAGIST_USERNAME  — your packagist.org username (qcodr)
+#   PACKAGIST_TOKEN     — packagist.org API token (Profile -> Show API Token)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify tagged commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, json
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-lock
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit --testsuite unit
+
+  packagist:
+    name: Notify Packagist
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Packagist update
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+        run: |
+          if [ -z "${PACKAGIST_USERNAME}" ] || [ -z "${PACKAGIST_TOKEN}" ]; then
+            echo "::error::PACKAGIST_USERNAME / PACKAGIST_TOKEN secrets are not set."
+            exit 1
+          fi
+          curl -sS -f -X POST \
+            -H 'Content-Type: application/json' \
+            "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}" \
+            -d '{"repository":{"url":"https://github.com/qcodr/restate-sdk-php"}}'
+          echo "Packagist update triggered."
