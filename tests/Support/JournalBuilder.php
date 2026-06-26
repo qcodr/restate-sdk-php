@@ -156,9 +156,34 @@ final class JournalBuilder
         return $this;
     }
 
+    /**
+     * Adds the control-frame ack the runtime sends in reply to a `ProposeRunCompletion`
+     * (which sets REQUESTED_ACK). The SDK reads and ignores it — the resolved value
+     * arrives separately as a {@see MessageType::RunCompletion} notification.
+     */
+    public function proposeRunCompletionAck(int $completionId): self
+    {
+        $payload = (new Writer())->writeUint32Present(1, $completionId)->toString();
+        $this->journal[] = [MessageType::ProposeRunCompletionAck, $payload];
+
+        return $this;
+    }
+
     public function build(): string
     {
         $buffer = self::frame(MessageType::Start, $this->encodeStart(\count($this->journal)));
+
+        return $buffer . $this->frames();
+    }
+
+    /**
+     * Encodes the appended entries WITHOUT the leading StartMessage, so a streaming
+     * test can feed completions/signals to an already-parsed state machine the way the
+     * runtime streams them after the initial journal.
+     */
+    public function frames(): string
+    {
+        $buffer = '';
         foreach ($this->journal as [$type, $payload]) {
             $buffer .= self::frame($type, $payload);
         }

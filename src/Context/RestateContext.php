@@ -11,7 +11,6 @@ use Qcodr\Restate\Sdk\Error\TerminalException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Failure;
-use Qcodr\Restate\Sdk\Protocol\Message\Future;
 use Qcodr\Restate\Sdk\Protocol\Message\Header;
 use Qcodr\Restate\Sdk\Serde\Serde;
 use Qcodr\Restate\Sdk\Serde\SerializationException;
@@ -97,9 +96,14 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             $result = $action();
         } catch (TerminalException $e) {
             $this->vm->proposeRunCompletionFailure($completionId, new Failure($e->statusCode(), $e->getMessage()));
-            $this->vm->suspend(Future::forCompletion($completionId));
+
+            // In request/response, awaiting the just-proposed (not-yet-replayed)
+            // completion writes the suspension and unwinds; in streaming it parks until
+            // the runtime echoes the completion, where await() raises the terminal
+            // failure carried by it.
+            return $this->completionFuture($completionId)->await();
         } catch (Throwable $e) {
-            $this->handleRunFailure($completionId, $e, $options?->retryPolicy);
+            return $this->handleRunFailure($completionId, $e, $options?->retryPolicy);
         }
 
         try {
@@ -112,11 +116,13 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
                 $completionId,
                 new Failure(TerminalException::DEFAULT_CODE, 'run result is not serializable: ' . $e->getMessage()),
             );
-            $this->vm->suspend(Future::forCompletion($completionId));
+
+            return $this->completionFuture($completionId)->await();
         }
 
         $this->vm->proposeRunCompletionSuccess($completionId, $serialized);
-        $this->vm->suspend(Future::forCompletion($completionId));
+
+        return $this->completionFuture($completionId)->await();
     }
 
     /**
@@ -128,7 +134,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
      * a terminal failure once attempts are exhausted, or reports a retryable attempt
      * failure carrying a computed backoff so the whole invocation re-runs the closure.
      */
-    private function handleRunFailure(int $completionId, Throwable $error, ?RetryPolicy $policy): never
+    private function handleRunFailure(int $completionId, Throwable $error, ?RetryPolicy $policy): mixed
     {
         if ($policy === null || $policy->maxAttempts === null) {
             throw $error;
@@ -140,7 +146,10 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
                 $completionId,
                 new Failure(TerminalException::DEFAULT_CODE, $error->getMessage()),
             );
-            $this->vm->suspend(Future::forCompletion($completionId));
+
+            // The proposed failure is terminal; in request/response await() writes the
+            // suspension and unwinds, in streaming it raises the carried failure.
+            return $this->completionFuture($completionId)->await();
         }
 
         $this->logger->warning('Durable run failed (retryable): ' . $error->getMessage(), ['exception' => $error]);
@@ -297,78 +306,98 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             throw new InvalidArgumentException('select() requires at least one future');
         }
 
-        for ($index = 0, $count = \count($futures); $index < $count; $index++) {
-            if ($futures[$index]->isReady()) {
-                return [$index, $futures[$index]->take()];
+        // In request/response suspendAny() throws, so this loop runs once; in streaming
+        // it parks, and on resume the readiness scan re-runs and returns the winner.
+        while (true) {
+            for ($index = 0, $count = \count($futures); $index < $count; $index++) {
+                if ($futures[$index]->isReady()) {
+                    return [$index, $futures[$index]->take()];
+                }
             }
-        }
 
-        [$completions, $signals] = self::partitionFutures($futures);
-        $this->vm->suspendAny($completions, $signals);
+            [$completions, $signals] = self::partitionFutures($futures);
+            $this->vm->suspendAny($completions, $signals);
+        }
     }
 
     public function awaitAll(array $futures): array
     {
-        $unresolved = \array_filter($futures, static fn (DurableFuture $future): bool => !$future->isReady());
-        if ($unresolved !== []) {
+        while (true) {
+            $unresolved = \array_filter($futures, static fn (DurableFuture $future): bool => !$future->isReady());
+            if ($unresolved === []) {
+                return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
+            }
+
+            // Request/response: suspendAll() throws here. Streaming: it parks, then the
+            // loop re-checks until every future is ready.
             [$completions, $signals] = self::partitionFutures(\array_values($unresolved));
             $this->vm->suspendAll($completions, $signals);
         }
-
-        return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
     }
 
     public function awaitAny(DurableFuture ...$futures): mixed
     {
-        $unresolved = [];
-        $lastFailure = null;
+        while (true) {
+            $unresolved = [];
+            $lastFailure = null;
 
-        foreach ($futures as $future) {
-            if (!$future->isReady()) {
-                $unresolved[] = $future;
+            foreach ($futures as $future) {
+                if (!$future->isReady()) {
+                    $unresolved[] = $future;
+
+                    continue;
+                }
+
+                try {
+                    // A ready, successful future wins immediately (Promise.any).
+                    return $future->take();
+                } catch (TerminalException $failure) {
+                    // A ready, failed future is skipped; remember it in case all fail.
+                    $lastFailure = $failure;
+                }
+            }
+
+            if ($unresolved !== []) {
+                // Request/response: suspendAnySucceeded() throws. Streaming: it parks,
+                // then the loop re-scans for the first success.
+                [$completions, $signals] = self::partitionFutures($unresolved);
+                $this->vm->suspendAnySucceeded($completions, $signals);
 
                 continue;
             }
 
-            try {
-                // A ready, successful future wins immediately (Promise.any).
-                return $future->take();
-            } catch (TerminalException $failure) {
-                // A ready, failed future is skipped; remember it in case all fail.
-                $lastFailure = $failure;
-            }
+            // Every future was ready and failed: rethrow the last failure observed.
+            throw $lastFailure ?? new TerminalException('awaitAny requires at least one future');
         }
-
-        if ($unresolved !== []) {
-            [$completions, $signals] = self::partitionFutures($unresolved);
-            $this->vm->suspendAnySucceeded($completions, $signals);
-        }
-
-        // Every future was ready and failed: rethrow the last failure observed.
-        throw $lastFailure ?? new TerminalException('awaitAny requires at least one future');
     }
 
     public function awaitAllSucceeded(array $futures): array
     {
-        $unresolved = [];
-        foreach ($futures as $future) {
-            if (!$future->isReady()) {
-                $unresolved[] = $future;
+        while (true) {
+            $unresolved = [];
+            foreach ($futures as $future) {
+                if (!$future->isReady()) {
+                    $unresolved[] = $future;
+
+                    continue;
+                }
+                if ($future->isFailed()) {
+                    // Short-circuit on the first failure (Promise.all): take() rethrows it.
+                    $future->take();
+                }
+            }
+
+            if ($unresolved !== []) {
+                // Request/response: suspendAllSucceeded() throws. Streaming: it parks,
+                // then the loop re-checks until all are ready (or one fails).
+                [$completions, $signals] = self::partitionFutures($unresolved);
+                $this->vm->suspendAllSucceeded($completions, $signals);
 
                 continue;
             }
-            if ($future->isFailed()) {
-                // Short-circuit on the first failure (Promise.all): take() rethrows it.
-                $future->take();
-            }
-        }
 
-        if ($unresolved !== []) {
-            [$completions, $signals] = self::partitionFutures($unresolved);
-            $this->vm->suspendAllSucceeded($completions, $signals);
+            return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
         }
-
-        return \array_map(static fn (DurableFuture $future): mixed => $future->take(), $futures);
     }
 
     public function serviceSend(

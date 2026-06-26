@@ -21,11 +21,13 @@ final class Endpoint
      * @param array<string, ServiceOptions> $options discovery options keyed by service name
      * @param RequestIdentityVerifier|null $identityVerifier request-signing verifier;
      *                                                        null disables verification
+     * @param ProtocolMode $protocolMode the transport mode advertised in discovery
      */
     public function __construct(
         private readonly array $services,
         private readonly array $options = [],
         private readonly ?RequestIdentityVerifier $identityVerifier = null,
+        private readonly ProtocolMode $protocolMode = ProtocolMode::RequestResponse,
     ) {
     }
 
@@ -51,6 +53,14 @@ final class Endpoint
     public function identityVerifier(): ?RequestIdentityVerifier
     {
         return $this->identityVerifier;
+    }
+
+    /**
+     * The transport mode advertised in the discovery manifest.
+     */
+    public function protocolMode(): ProtocolMode
+    {
+        return $this->protocolMode;
     }
 
     /**

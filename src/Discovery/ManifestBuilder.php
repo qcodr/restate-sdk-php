@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Discovery;
 
+use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
 use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Service\HandlerDefinition;
 use Qcodr\Restate\Sdk\Service\HandlerOptions;
@@ -47,8 +48,12 @@ final class ManifestBuilder
      *
      * @return array<string, mixed>
      */
-    public function build(array $services, int $manifestVersion = 1, array $options = []): array
-    {
+    public function build(
+        array $services,
+        int $manifestVersion = 1,
+        array $options = [],
+        ProtocolMode $protocolMode = ProtocolMode::RequestResponse,
+    ): array {
         $built = [];
         foreach ($services as $service) {
             $built[] = $this->buildService($service, $manifestVersion, $options[$service->name] ?? null);
@@ -57,7 +62,7 @@ final class ManifestBuilder
         return [
             'minProtocolVersion' => ServiceProtocolVersion::min()->value,
             'maxProtocolVersion' => ServiceProtocolVersion::max()->value,
-            'protocolMode' => 'REQUEST_RESPONSE',
+            'protocolMode' => $protocolMode->value,
             'services' => $built,
         ];
     }

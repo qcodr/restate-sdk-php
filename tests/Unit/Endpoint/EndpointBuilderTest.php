@@ -6,6 +6,7 @@ namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint;
 
 use PHPUnit\Framework\TestCase;
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
+use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
 use Qcodr\Restate\Sdk\Service\ServiceDefinition;
 use Qcodr\Restate\Sdk\Service\ServiceDefinitionException;
 use Qcodr\Restate\Sdk\Service\ServiceOptions;
@@ -60,5 +61,28 @@ final class EndpointBuilderTest extends TestCase
         $this->expectExceptionMessage('Cannot build an endpoint with no services');
 
         Endpoint::builder()->build();
+    }
+
+    public function testProtocolModeDefaultsToRequestResponse(): void
+    {
+        $endpoint = Endpoint::builder()->bind(new Greeter())->build();
+
+        self::assertSame(ProtocolMode::RequestResponse, $endpoint->protocolMode());
+    }
+
+    public function testProtocolModeOptsIntoBidiStream(): void
+    {
+        $endpoint = Endpoint::builder()
+            ->bind(new Greeter())
+            ->protocolMode(ProtocolMode::BidiStream)
+            ->build();
+
+        self::assertSame(ProtocolMode::BidiStream, $endpoint->protocolMode());
+    }
+
+    public function testProtocolModeEnumValues(): void
+    {
+        self::assertSame('REQUEST_RESPONSE', ProtocolMode::RequestResponse->value);
+        self::assertSame('BIDI_STREAM', ProtocolMode::BidiStream->value);
     }
 }

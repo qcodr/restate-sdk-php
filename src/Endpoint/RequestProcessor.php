@@ -8,7 +8,6 @@ use Psr\Log\LoggerInterface;
 use Qcodr\Restate\Sdk\Context\Clock;
 use Qcodr\Restate\Sdk\Discovery\DiscoveryContentType;
 use Qcodr\Restate\Sdk\Discovery\ManifestBuilder;
-use Qcodr\Restate\Sdk\Protocol\ProtocolException;
 use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Serde\Serde;
 use Qcodr\Restate\Sdk\Vm\StateMachine;
@@ -27,7 +26,7 @@ use Qcodr\Restate\Sdk\Vm\StateMachine;
  */
 final class RequestProcessor
 {
-    public const SDK_IDENTIFIER = 'restate-sdk-php/0.1.0';
+    public const SDK_IDENTIFIER = InvocationDriver::SDK_IDENTIFIER;
 
     /** Hard cap on the request body, enforced for every transport (not just Swoole). */
     public const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -36,7 +35,7 @@ final class RequestProcessor
     private const HEADER_CONTENT_TYPE = 'content-type';
 
     private readonly ManifestBuilder $manifestBuilder;
-    private readonly InvocationProcessor $invocationProcessor;
+    private readonly InvocationDriver $invocationDriver;
 
     public function __construct(
         private readonly Endpoint $endpoint,
@@ -47,7 +46,7 @@ final class RequestProcessor
         bool $debug = false,
     ) {
         $this->manifestBuilder = $manifestBuilder ?? new ManifestBuilder();
-        $this->invocationProcessor = new InvocationProcessor($serde, $clock, $logger, $debug);
+        $this->invocationDriver = new InvocationDriver($serde, $clock, $logger, $debug);
     }
 
     public function process(HttpRequest $request): HttpResponse
@@ -97,7 +96,7 @@ final class RequestProcessor
             }
         }
 
-        $manifest = $this->manifestBuilder->build($services, $version, $options);
+        $manifest = $this->manifestBuilder->build($services, $version, $options, $this->endpoint->protocolMode());
         $body = \json_encode($manifest, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         return HttpResponse::of(200, $body, [
@@ -127,26 +126,15 @@ final class RequestProcessor
             return HttpResponse::of(404, "Unknown handler {$serviceName}/{$handlerName}");
         }
 
-        try {
-            $vm = new StateMachine($version);
-            $vm->notifyInput($request->body);
-            $vm->notifyInputClosed();
-            if (!$vm->isReadyToExecute()) {
-                return HttpResponse::of(500, 'Incomplete invocation stream', [self::HEADER_CONTENT_TYPE => 'text/plain']);
-            }
-
-            $this->invocationProcessor->process($service, $handler, $vm);
-            $output = $vm->takeOutput();
-        } catch (ProtocolException) {
-            // Don't echo parser internals back to the caller (it is an oracle when the
-            // endpoint is unauthenticated); the detail stays in the worker's logs.
-            return HttpResponse::of(500, 'Malformed invocation stream', [self::HEADER_CONTENT_TYPE => 'text/plain']);
-        }
-
-        return HttpResponse::of(200, $output, [
-            self::HEADER_CONTENT_TYPE => $version->contentType(),
-            self::HEADER_SERVER => self::SDK_IDENTIFIER,
-        ]);
+        // Request/response transport: hand the driver a state machine with the r/r
+        // defaults (throwing suspender + buffering sink). Streaming wiring lives in the
+        // driver too but is not exposed here — that is Phase 4's streaming server.
+        return $this->invocationDriver->runRequestResponse(
+            new StateMachine($version),
+            $service,
+            $handler,
+            $request->body,
+        );
     }
 
     /**

@@ -25,6 +25,8 @@ final class EndpointBuilder
     /** @var list<IdentityKey> */
     private array $identityKeys = [];
 
+    private ProtocolMode $protocolMode = ProtocolMode::RequestResponse;
+
     public function bind(object $service): self
     {
         $definition = $service instanceof ServiceDefinition
@@ -73,6 +75,20 @@ final class EndpointBuilder
         return $this;
     }
 
+    /**
+     * Opts the endpoint into a transport mode for discovery.
+     *
+     * Defaults to {@see ProtocolMode::RequestResponse}; set
+     * {@see ProtocolMode::BidiStream} only when the host supports
+     * bidirectional streaming.
+     */
+    public function protocolMode(ProtocolMode $mode): self
+    {
+        $this->protocolMode = $mode;
+
+        return $this;
+    }
+
     public function build(): Endpoint
     {
         if ($this->services === []) {
@@ -83,6 +99,6 @@ final class EndpointBuilder
             ? null
             : new RequestIdentityVerifier(...$this->identityKeys);
 
-        return new Endpoint($this->services, $this->options, $verifier);
+        return new Endpoint($this->services, $this->options, $verifier, $this->protocolMode);
     }
 }

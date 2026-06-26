@@ -83,8 +83,10 @@ final class StateMachine
     /** @var array<int, Notification> signals keyed by signal index */
     private array $signals = [];
 
-    private string $output = '';
     private VmState $state = VmState::WaitingPreFlight;
+
+    private readonly Suspender $suspender;
+    private readonly OutputSink $sink;
 
     /** Built-in signals reserve indexes 0..16; user signals (awakeables) start here. */
     private const FIRST_USER_SIGNAL_ID = 17;
@@ -92,8 +94,19 @@ final class StateMachine
     /** Built-in CANCEL signal (BuiltInSignal.CANCEL) delivered to observe cancellation. */
     private const CANCEL_SIGNAL_ID = 1;
 
-    public function __construct(private readonly ServiceProtocolVersion $version)
-    {
+    /**
+     * @param Suspender|null  $suspender how an await point parks; defaults to the
+     *                                   request/response {@see ThrowingSuspender}.
+     * @param OutputSink|null $sink      where encoded frames go; defaults to the
+     *                                   buffering {@see BufferingOutputSink}.
+     */
+    public function __construct(
+        private readonly ServiceProtocolVersion $version,
+        ?Suspender $suspender = null,
+        ?OutputSink $sink = null,
+    ) {
+        $this->suspender = $suspender ?? new ThrowingSuspender();
+        $this->sink = $sink ?? new BufferingOutputSink();
     }
 
     public function protocolVersion(): ServiceProtocolVersion
@@ -125,6 +138,12 @@ final class StateMachine
     private function tryParse(): void
     {
         if ($this->parsed) {
+            // The journal is already parsed. In request/response transport no further
+            // bytes arrive, so this is a no-op; in streaming transport the runtime keeps
+            // delivering notifications, which are routed into the completion/signal
+            // tables here (the command cursor is never advanced by them).
+            $this->ingestTrailing();
+
             return;
         }
 
@@ -171,7 +190,39 @@ final class StateMachine
         $this->signals = $signals;
         $this->journalCommandTypes = $commandTypes;
         $this->parsed = true;
-        $this->inputBuffer = ''; // the journal is parsed; free the (up to 64 MB) buffer
+        // Drop the (up to 64 MB) parsed journal; keep only any bytes past it. In
+        // request/response the cursor sits at end-of-buffer so this frees everything,
+        // exactly as before; in streaming it preserves frames that arrived early.
+        $this->inputBuffer = \substr($this->inputBuffer, $cursor);
+        $this->ingestTrailing();
+    }
+
+    /**
+     * Routes any complete notification frames buffered past the replayed journal into
+     * the completion/signal tables, leaving a partial trailing frame for the next call.
+     * Streaming transport only; request/response never accumulates trailing bytes.
+     */
+    private function ingestTrailing(): void
+    {
+        if ($this->inputBuffer === '') {
+            return;
+        }
+
+        $offset = 0;
+        while (($frame = MessageCodec::consume($this->inputBuffer, $offset)) !== null) {
+            $type = $frame->type();
+            if ($type !== null && $type->isNotification()) {
+                $this->routeNotification(
+                    Notification::decode($frame->payload),
+                    $this->completions,
+                    $this->signals,
+                );
+            }
+        }
+
+        if ($offset > 0) {
+            $this->inputBuffer = \substr($this->inputBuffer, $offset);
+        }
     }
 
     /**
@@ -516,18 +567,22 @@ final class StateMachine
         return isset($this->signals[self::CANCEL_SIGNAL_ID]);
     }
 
-    /** Returns the completion if ready, otherwise suspends (or fails if cancelled). */
+    /** Returns the completion if ready, otherwise parks (or fails if cancelled). */
     public function awaitCompletion(int $completionId): Notification
     {
-        if (isset($this->completions[$completionId])) {
-            return $this->completions[$completionId];
-        }
+        while (true) {
+            if (isset($this->completions[$completionId])) {
+                return $this->completions[$completionId];
+            }
 
-        if ($this->isCancelled()) {
-            throw new CancelledException();
-        }
+            if ($this->isCancelled()) {
+                throw new CancelledException();
+            }
 
-        $this->suspend(Future::forCompletion($completionId));
+            // In request/response this parks by throwing; in streaming it returns once
+            // the driver fed the completion, so the loop re-checks the table.
+            $this->parkOn(Future::forCompletion($completionId));
+        }
     }
 
     public function isSignalReady(int $signalId): bool
@@ -537,15 +592,17 @@ final class StateMachine
 
     public function awaitSignal(int $signalId): Notification
     {
-        if (isset($this->signals[$signalId])) {
-            return $this->signals[$signalId];
-        }
+        while (true) {
+            if (isset($this->signals[$signalId])) {
+                return $this->signals[$signalId];
+            }
 
-        if ($this->isCancelled()) {
-            throw new CancelledException();
-        }
+            if ($this->isCancelled()) {
+                throw new CancelledException();
+            }
 
-        $this->suspend(Future::forSignal($signalId));
+            $this->parkOn(Future::forSignal($signalId));
+        }
     }
 
     /** Reads a ready signal without consuming it (non-destructive; see {@see peekCompletion}). */
@@ -559,73 +616,84 @@ final class StateMachine
     }
 
     /**
-     * Suspends awaiting the first of several results to complete (race semantics).
+     * Parks awaiting the first of several results to complete (race semantics).
      *
      * @param list<int> $completionIds
      * @param list<int> $signalIds
      */
-    public function suspendAny(array $completionIds, array $signalIds): never
+    public function suspendAny(array $completionIds, array $signalIds): void
     {
-        $this->suspend(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted));
     }
 
     /**
-     * Suspends awaiting every result to complete.
+     * Parks awaiting every result to complete.
      *
      * @param list<int> $completionIds
      * @param list<int> $signalIds
      */
-    public function suspendAll(array $completionIds, array $signalIds): never
+    public function suspendAll(array $completionIds, array $signalIds): void
     {
-        $this->suspend(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted));
     }
 
     /**
-     * Suspends awaiting the first result to complete *successfully* (Promise.any):
-     * the combinator resolves on the first success, or once every awaited result has
+     * Parks awaiting the first result to complete *successfully* (Promise.any): the
+     * combinator resolves on the first success, or once every awaited result has
      * failed.
      *
      * @param list<int> $completionIds
      * @param list<int> $signalIds
      */
-    public function suspendAnySucceeded(array $completionIds, array $signalIds): never
+    public function suspendAnySucceeded(array $completionIds, array $signalIds): void
     {
-        $this->suspend(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed));
     }
 
     /**
-     * Suspends awaiting every result to complete successfully, short-circuiting on
-     * the first failure (Promise.all): the combinator resolves once all awaited
-     * results have succeeded, or on the first one to fail.
+     * Parks awaiting every result to complete successfully, short-circuiting on the
+     * first failure (Promise.all): the combinator resolves once all awaited results
+     * have succeeded, or on the first one to fail.
      *
      * @param list<int> $completionIds
      * @param list<int> $signalIds
      */
-    public function suspendAllSucceeded(array $completionIds, array $signalIds): never
+    public function suspendAllSucceeded(array $completionIds, array $signalIds): void
     {
-        $this->suspend(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed));
+        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed));
     }
 
     /**
-     * Emits a suspension for the given await point and unwinds user code.
+     * Parks the invocation at an await point: wraps the awaited future in a guard that
+     * also waits on the built-in CANCEL signal, then hands it to the {@see Suspender}.
      *
-     * The emitted await tree also waits on the built-in CANCEL signal so the runtime
-     * resumes a suspended invocation when it is cancelled (implicit cancellation):
-     * on resume {@see isCancelled} is true and the pending await raises
-     * {@see CancelledException}. Without this, an invocation blocked only on (say) an
-     * awakeable would never be woken by a cancel and would hang forever.
+     * The CANCEL guard means the runtime resumes a suspended invocation when it is
+     * cancelled (implicit cancellation): on resume {@see isCancelled} is true and the
+     * pending await raises {@see CancelledException}. Without it, an invocation blocked
+     * only on (say) an awakeable would never be woken by a cancel and would hang.
+     *
+     * In request/response the suspender writes the suspension and throws to unwind the
+     * handler; in streaming it yields the fiber and returns once a result has arrived.
      */
-    public function suspend(Future $future): never
+    private function parkOn(Future $inner): void
     {
         $awaitOn = new Future(
             waitingSignals: [self::CANCEL_SIGNAL_ID],
-            nestedFutures: [$future],
+            nestedFutures: [$inner],
             combinatorType: CombinatorType::FirstCompleted,
         );
-        $this->appendOutput(new SuspensionMessage($awaitOn));
-        $this->state = VmState::Closed;
+        $this->suspender->park($this, $awaitOn);
+    }
 
-        throw new SuspendException();
+    /**
+     * Writes the suspension frame for an await tree and closes the VM. Called by the
+     * request/response {@see ThrowingSuspender}; the streaming suspender never writes a
+     * suspension because the response stays open.
+     */
+    public function writeSuspension(Future $awaitTree): void
+    {
+        $this->appendOutput(new SuspensionMessage($awaitTree));
+        $this->state = VmState::Closed;
     }
 
     // --- Termination ---
@@ -666,10 +734,9 @@ final class StateMachine
 
     public function takeOutput(): string
     {
-        $output = $this->output;
-        $this->output = '';
-
-        return $output;
+        // Only a buffering sink retains frames to hand back here; a streaming sink has
+        // already pushed each frame to the open response, so there is nothing to drain.
+        return $this->sink instanceof BufferingOutputSink ? $this->sink->take() : '';
     }
 
     public function isProcessing(): bool
@@ -719,7 +786,7 @@ final class StateMachine
 
     private function appendOutput(OutgoingMessage $message): void
     {
-        $this->output .= MessageCodec::encode($message);
+        $this->sink->write(MessageCodec::encode($message));
     }
 
     private function allocateCompletionId(): int
