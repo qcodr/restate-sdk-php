@@ -1,0 +1,18 @@
+services:
+  restate:
+    image: docker.io/restatedev/restate:1.5.2
+    ports:
+      - "8080:8080"   # ingress
+      - "9070:9070"   # admin
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  examples-endpoint:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: php /app/examples/endpoint.php
+    expose:
+      - "9080"
+    depends_on:
+      - restate

@@ -1,0 +1,48 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Boots a Restate deployment endpoint over Swoole.
+ *
+ * Usage:
+ *   restate-serve [bootstrap.php] [host] [port]
+ *
+ * The bootstrap file must return a Restate\Sdk\Endpoint\Endpoint. Defaults:
+ * bootstrap = ./restate.php, host = 0.0.0.0, port = $PORT or 9080.
+ *
+ * Example bootstrap (restate.php):
+ *   <?php
+ *   use Restate\Sdk\Endpoint\Endpoint;
+ *   return Endpoint::builder()->bind(new Greeter())->build();
+ */
+
+use Restate\Sdk\Endpoint\Endpoint;
+use Restate\Sdk\Server\SwooleServer;
+
+(static function (array $argv): void {
+    foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $autoload) {
+        if (\is_file($autoload)) {
+            require $autoload;
+            break;
+        }
+    }
+
+    $bootstrapFile = $argv[1] ?? \getcwd() . '/restate.php';
+    $host = $argv[2] ?? '0.0.0.0';
+    $port = (int) ($argv[3] ?? \getenv('PORT') ?: 9080);
+
+    if (!\is_file($bootstrapFile)) {
+        \fwrite(\STDERR, "Bootstrap file not found: {$bootstrapFile}\n");
+        exit(1);
+    }
+
+    $endpoint = require $bootstrapFile;
+    if (!$endpoint instanceof Endpoint) {
+        \fwrite(\STDERR, "Bootstrap file must return a " . Endpoint::class . "\n");
+        exit(1);
+    }
+
+    (new SwooleServer($endpoint))->listen($host, $port);
+})($argv);

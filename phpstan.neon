@@ -1,0 +1,14 @@
+includes:
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/phpstan/phpstan-phpunit/rules.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+    # ext-swoole is only present in the Docker image; stub it so the server
+    # adapter is still fully analyzed locally.
+    stubFiles:
+        - stubs/swoole.stub
+    treatPhpDocTypesAsCertain: false

@@ -1,0 +1,56 @@
+{
+    "name": "qcodr/restate-sdk-php",
+    "description": "PHP SDK for Restate (restate.dev); Durable execution for services, virtual objects and workflows.",
+    "type": "library",
+    "license": "Apache-2.0",
+    "keywords": ["restate", "durable-execution", "workflow", "sdk", "php"],
+    "homepage": "https://github.com/qcodr/restate-sdk-php",
+    "require": {
+        "php": ">=8.2",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "psr/http-factory": "^1",
+        "psr/http-message": "^2",
+        "psr/http-server-handler": "^1",
+        "psr/log": "^3.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "nyholm/psr7": "^1",
+        "phpstan/phpstan": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpunit/phpunit": "^11.0",
+        "vimeo/psalm": "^6.0"
+    },
+    "suggest": {
+        "ext-swoole": "Required to run the Swoole-based HTTP server (Restate\\Sdk\\Server\\SwooleServer).",
+        "ext-sodium": "Required for request identity verification (Restate\\Sdk\\Endpoint\\Identity)."
+    },
+    "autoload": {
+        "psr-4": {
+            "Restate\\Sdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Restate\\Sdk\\Tests\\": "tests/"
+        }
+    },
+    "bin": ["bin/restate-serve", "bin/restate-codegen"],
+    "scripts": {
+        "test": "phpunit --testsuite unit",
+        "test:unit": "phpunit --testsuite unit",
+        "stan": "phpstan analyse --no-progress",
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "sast": "psalm --taint-analysis --no-progress",
+        "lint": ["@cs", "@stan"],
+        "check": ["@lint", "@sast", "@test:unit"]
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

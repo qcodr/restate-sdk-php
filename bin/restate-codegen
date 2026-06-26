@@ -1,0 +1,60 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Generates a typed Restate client class for a service.
+ *
+ * Usage:
+ *   restate-codegen <Fully\\Qualified\\ServiceClass> [outputDir] [namespace]
+ *
+ * The service class must be autoloadable via the resolved Composer autoloader.
+ * Writes {ServiceName}Client.php to outputDir (default ./generated) under the
+ * given namespace (default Restate\Generated) and prints the written path.
+ *
+ * Example:
+ *   restate-codegen 'App\Services\Greeter' src/Clients 'App\Clients'
+ */
+
+use Restate\Sdk\Codegen\ClientGenerator;
+
+(static function (array $argv): void {
+    foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $autoload) {
+        if (\is_file($autoload)) {
+            require $autoload;
+            break;
+        }
+    }
+
+    $serviceClass = $argv[1] ?? null;
+    if ($serviceClass === null || $serviceClass === '') {
+        \fwrite(\STDERR, "Usage: restate-codegen <Fully\\Qualified\\ServiceClass> [outputDir] [namespace]\n");
+        exit(1);
+    }
+
+    $outputDir = $argv[2] ?? \getcwd() . '/generated';
+    $namespace = $argv[3] ?? 'Restate\\Generated';
+
+    try {
+        $generator = new ClientGenerator($namespace);
+        $source = $generator->generate($serviceClass);
+        $className = $generator->clientClassName($serviceClass);
+    } catch (\Throwable $e) {
+        \fwrite(\STDERR, 'restate-codegen: ' . $e->getMessage() . "\n");
+        exit(1);
+    }
+
+    if (!\is_dir($outputDir) && !\mkdir($outputDir, 0o755, true) && !\is_dir($outputDir)) {
+        \fwrite(\STDERR, "Could not create output directory: {$outputDir}\n");
+        exit(1);
+    }
+
+    $path = \rtrim($outputDir, '/') . '/' . $className . '.php';
+    if (\file_put_contents($path, $source) === false) {
+        \fwrite(\STDERR, "Could not write client to: {$path}\n");
+        exit(1);
+    }
+
+    echo $path . "\n";
+})($argv);

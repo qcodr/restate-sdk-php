@@ -1,0 +1,39 @@
+<?php
+
+namespace Swoole\Http {
+    class Server
+    {
+        public function __construct(string $host, int $port = 0, int $mode = 0, int $sockType = 1) {}
+
+        /** @param array<string, mixed> $settings */
+        public function set(array $settings): bool {}
+
+        public function on(string $event, callable $callback): bool {}
+
+        public function start(): bool {}
+    }
+
+    class Request
+    {
+        /** @var array<string, string> */
+        public array $header;
+
+        /** @var array<string, mixed> */
+        public array $server;
+
+        public function rawContent(): string|false {}
+    }
+
+    class Response
+    {
+        public function status(int $statusCode, string $reason = ''): bool {}
+
+        public function header(string $key, string $value): bool {}
+
+        public function end(string $content = ''): bool {}
+    }
+}
+
+namespace {
+    function swoole_cpu_num(): int {}
+}
