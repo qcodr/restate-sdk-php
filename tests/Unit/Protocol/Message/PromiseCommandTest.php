@@ -54,6 +54,7 @@ final class PromiseCommandTest extends TestCase
         self::assertSame(9, $fields[11]);
         self::assertSame('res', $fields[12]);
         self::assertArrayNotHasKey(3, $fields, 'a resolved promise must not carry a failure');
+        self::assertIsString($fields[2]);
         self::assertSame('payload', Value::decode($fields[2])->content);
     }
 
@@ -66,6 +67,7 @@ final class PromiseCommandTest extends TestCase
         self::assertSame(4, $fields[11]);
         self::assertArrayNotHasKey(2, $fields, 'a rejected promise must not carry a value');
 
+        self::assertIsString($fields[3]);
         $failure = Failure::decode($fields[3]);
         self::assertSame(13, $failure->code);
         self::assertSame('boom', $failure->message);
@@ -78,11 +80,13 @@ final class PromiseCommandTest extends TestCase
         $fields = [];
         while (!$reader->atEnd()) {
             [$field, $wire] = $reader->readTag();
-            $fields[$field] = match ($wire) {
-                WireType::VARINT => $reader->readVarint(),
-                WireType::LENGTH_DELIMITED => $reader->readLengthDelimited(),
-                default => $reader->skip($wire),
-            };
+            if ($wire === WireType::VARINT) {
+                $fields[$field] = $reader->readVarint();
+            } elseif ($wire === WireType::LENGTH_DELIMITED) {
+                $fields[$field] = $reader->readLengthDelimited();
+            } else {
+                $reader->skip($wire);
+            }
         }
 
         return $fields;

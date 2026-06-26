@@ -26,6 +26,7 @@ final class CompleteAwakeableCommandTest extends TestCase
         self::assertSame('name-x', $fields[12]);
         self::assertArrayNotHasKey(3, $fields, 'a resolved awakeable must not carry a failure');
         self::assertArrayNotHasKey(11, $fields, 'awakeable completion is addressed by id, not a completion index');
+        self::assertIsString($fields[2]);
         self::assertSame('data', Value::decode($fields[2])->content);
     }
 
@@ -37,6 +38,7 @@ final class CompleteAwakeableCommandTest extends TestCase
         self::assertSame('awk', $fields[1]);
         self::assertArrayNotHasKey(2, $fields, 'a rejected awakeable must not carry a value');
 
+        self::assertIsString($fields[3]);
         $failure = Failure::decode($fields[3]);
         self::assertSame(2, $failure->code);
         self::assertSame('no', $failure->message);
@@ -49,11 +51,13 @@ final class CompleteAwakeableCommandTest extends TestCase
         $fields = [];
         while (!$reader->atEnd()) {
             [$field, $wire] = $reader->readTag();
-            $fields[$field] = match ($wire) {
-                WireType::VARINT => $reader->readVarint(),
-                WireType::LENGTH_DELIMITED => $reader->readLengthDelimited(),
-                default => $reader->skip($wire),
-            };
+            if ($wire === WireType::VARINT) {
+                $fields[$field] = $reader->readVarint();
+            } elseif ($wire === WireType::LENGTH_DELIMITED) {
+                $fields[$field] = $reader->readLengthDelimited();
+            } else {
+                $reader->skip($wire);
+            }
         }
 
         return $fields;

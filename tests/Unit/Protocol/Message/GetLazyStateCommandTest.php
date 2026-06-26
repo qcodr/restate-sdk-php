@@ -42,11 +42,13 @@ final class GetLazyStateCommandTest extends TestCase
         $fields = [];
         while (!$reader->atEnd()) {
             [$field, $wire] = $reader->readTag();
-            $fields[$field] = match ($wire) {
-                WireType::VARINT => $reader->readVarint(),
-                WireType::LENGTH_DELIMITED => $reader->readLengthDelimited(),
-                default => $reader->skip($wire),
-            };
+            if ($wire === WireType::VARINT) {
+                $fields[$field] = $reader->readVarint();
+            } elseif ($wire === WireType::LENGTH_DELIMITED) {
+                $fields[$field] = $reader->readLengthDelimited();
+            } else {
+                $reader->skip($wire);
+            }
         }
 
         return $fields;
