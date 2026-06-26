@@ -1,0 +1,21 @@
+# Codecov configuration.
+#
+# SwooleServer is excluded: it is ext-swoole transport glue that requires the
+# extension and a live socket, so it is exercised by the cross-SDK conformance
+# suite (`make conformance`) rather than unit tests. See phpunit.xml.dist.
+coverage:
+  status:
+    project:
+      default:
+        target: 95%
+        threshold: 1%
+    patch:
+      default:
+        informational: true
+
+ignore:
+  - "src/Server/SwooleServer.php"
+
+comment:
+  layout: "reach, diff, files"
+  require_changes: true
