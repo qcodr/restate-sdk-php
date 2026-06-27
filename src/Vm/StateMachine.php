@@ -8,6 +8,7 @@ use Closure;
 use Qcodr\Restate\Sdk\Error\CancelledException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Frame;
+use Qcodr\Restate\Sdk\Protocol\Message\AwaitingOnMessage;
 use Qcodr\Restate\Sdk\Protocol\Message\CallCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\ClearAllStateCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\ClearStateCommand;
@@ -508,7 +509,7 @@ final class StateMachine
 
     /**
      * Creates an awakeable: a signal slot plus the public id another invocation can
-     * use to complete it. The id is `prom_1` + base64url(invocationId ++ uint32be(idx)).
+     * use to complete it. The id is `sign_1` + base64url(invocationId ++ uint32be(idx)).
      *
      * @return array{0: string, 1: int} [awakeableId, signalId]
      */
@@ -719,6 +720,18 @@ final class StateMachine
     {
         $this->appendOutput(new SuspensionMessage($awaitTree));
         $this->state = VmState::Closed;
+    }
+
+    /**
+     * Streaming only: announces the current await tree to the runtime with an
+     * {@see AwaitingOnMessage} so it pushes the awaited completions/signals — including
+     * external ones the SDK cannot pull, like the CANCEL signal or an awakeable another
+     * invocation resolves — onto the open bidi stream. Unlike {@see writeSuspension} it
+     * leaves the VM open: the handler stays parked until the driver feeds a result.
+     */
+    public function writeAwaitingOn(Future $awaitTree): void
+    {
+        $this->appendOutput(new AwaitingOnMessage($awaitTree));
     }
 
     // --- Termination ---

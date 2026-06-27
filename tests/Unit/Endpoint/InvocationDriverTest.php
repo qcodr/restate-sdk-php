@@ -113,13 +113,14 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
-        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output), 'a parked await must not write a suspension');
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output), 'a parked await announces an AwaitingOn, not a suspension');
         self::assertSame('"inv-xyz"', $this->successValue($output));
         self::assertTrue($transport->isClosed(), 'the driver closes the channel after the terminal frame');
 
-        // Read #1 is the completion read; the CallCommand was already written by then.
-        self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(1)));
+        // Read #1 is the completion read; the CallCommand and the park's AwaitingOn were
+        // already written by then.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $this->frameTypes($transport->outputAtRead(1)));
     }
 
     public function testSpuriousFrameDoesNotResumeParkedHandlerPrematurely(): void
@@ -142,18 +143,18 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
         // The awaited id (not the spurious frame's value) is returned: had the spurious
         // frame resumed the now straight-line await, it would have observed an absent
         // completion and failed instead of returning this value.
         self::assertSame('"inv-xyz"', $this->successValue($output));
 
-        // The spurious frame (read #1) and the resolving frame (read #2) were both
-        // consumed while only the CallCommand had been written: the handler stayed parked
-        // across the spurious frame and emitted its terminal output only after read #2.
-        self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(1)));
-        self::assertSame([MessageType::CallCommand], $this->frameTypes($transport->outputAtRead(2)));
+        // The spurious frame (read #1) and the resolving frame (read #2) were both consumed
+        // while only the CallCommand and the park's AwaitingOn had been written: the handler
+        // stayed parked across the spurious frame and emitted its output only after read #2.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $this->frameTypes($transport->outputAtRead(1)));
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $this->frameTypes($transport->outputAtRead(2)));
     }
 
     public function testPromptCancelTurnsParkedAwaitIntoTerminal409(): void
@@ -169,7 +170,7 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::SleepCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertSame([MessageType::SleepCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
 
         $failure = $this->failure($output);
@@ -201,6 +202,7 @@ final class InvocationDriverTest extends TestCase
         self::assertSame([
             MessageType::RunCommand,
             MessageType::ProposeRunCompletion,
+            MessageType::AwaitingOn,
             MessageType::OutputCommand,
             MessageType::End,
         ], $this->frameTypes($output));
@@ -243,7 +245,7 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::SleepCommand, MessageType::Suspension], $this->frameTypes($output));
+        self::assertSame([MessageType::SleepCommand, MessageType::AwaitingOn, MessageType::Suspension], $this->frameTypes($output));
         self::assertNotContains(MessageType::OutputCommand, $this->frameTypes($output), 'no terminal output on a graceful suspend');
         self::assertTrue($transport->isClosed());
     }
@@ -303,8 +305,11 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
+        // SleepCommand + the sleep park's AwaitingOn, then the call, then 409 — the
+        // combinator re-park drains synchronously (its predicate already holds) so it
+        // never parks again and emits no second AwaitingOn.
         self::assertSame(
-            [MessageType::SleepCommand, MessageType::CallCommand, MessageType::OutputCommand, MessageType::End],
+            [MessageType::SleepCommand, MessageType::AwaitingOn, MessageType::CallCommand, MessageType::OutputCommand, MessageType::End],
             $this->frameTypes($output),
         );
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
@@ -327,7 +332,7 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
         self::assertSame(CancelledException::CODE, $this->failure($output)->code);
     }
@@ -349,7 +354,9 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        // One AwaitingOn for the first (parked) await; the second await finds its
+        // completion already buffered and returns on the fast path without parking.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
         self::assertSame('"call-result"', $this->successValue($output));
         // Both completions rode in read #1; no read past that batch occurred.
@@ -371,7 +378,9 @@ final class InvocationDriverTest extends TestCase
         );
 
         $output = $transport->written();
-        self::assertSame([MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        // The awakeable park announces an AwaitingOn (it carries no command of its own),
+        // which is exactly what lets the runtime push the resolving signal back.
+        self::assertSame([MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
         self::assertSame('"resolved"', $this->successValue($output));
     }
@@ -389,10 +398,16 @@ final class InvocationDriverTest extends TestCase
             [(new JournalBuilder())->input('')->build()],
         );
 
+        // Parking first announced an AwaitingOn (await tree in field 1); the EOF then
+        // wrote the Suspension (await tree in field 4). Both carry the same tree.
         $frames = MessageCodec::decodeAll($transport->written());
-        self::assertSame([MessageType::Suspension], \array_map(static fn ($f) => $f->type(), $frames));
+        self::assertSame([MessageType::AwaitingOn, MessageType::Suspension], \array_map(static fn ($f) => $f->type(), $frames));
 
-        $reader = new Reader($frames[0]->payload);
+        $awaitingOnReader = new Reader($frames[0]->payload);
+        [$awaitingOnField] = $awaitingOnReader->readTag();
+        self::assertSame(1, $awaitingOnField, 'the AwaitingOn carries its await tree in field 1');
+
+        $reader = new Reader($frames[1]->payload);
         [$field] = $reader->readTag();
         self::assertSame(4, $field, 'the suspension carries its await tree in field 4');
         $outer = $this->decodeFuture($reader->readLengthDelimited());

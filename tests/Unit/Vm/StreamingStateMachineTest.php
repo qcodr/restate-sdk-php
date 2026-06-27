@@ -68,8 +68,9 @@ final class StreamingStateMachineTest extends TestCase
         self::assertCount(1, $awaitTree->nestedFutures);
         self::assertSame([$resultId], $awaitTree->nestedFutures[0]->waitingCompletions);
 
-        // Only the CallCommand was emitted: no suspension frame is written while parked.
-        self::assertSame([MessageType::CallCommand], $sink->frameTypes());
+        // Parking announces the await tree with an AwaitingOn (so the runtime pushes the
+        // awaited completions/signals on the open stream) but writes NO suspension frame.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $sink->frameTypes());
         self::assertNotContains(MessageType::Suspension, $sink->frameTypes());
 
         // A non-buffering sink has nothing to drain via the legacy takeOutput() path.
@@ -99,8 +100,9 @@ final class StreamingStateMachineTest extends TestCase
         self::assertSame('"hello"', $result->value);
         self::assertSame($resultId, $result->completionId);
 
-        // The park/resume round trip never wrote a suspension frame.
-        self::assertSame([MessageType::CallCommand], $sink->frameTypes());
+        // The park/resume round trip announced the await with an AwaitingOn but never
+        // wrote a suspension frame.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $sink->frameTypes());
     }
 
     public function testCombinatorParksOnFirstCompletedTreeInStreaming(): void

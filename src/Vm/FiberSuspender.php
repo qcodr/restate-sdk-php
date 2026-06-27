@@ -19,11 +19,18 @@ use Qcodr\Restate\Sdk\Protocol\Message\Future;
  * The handler runs inside a {@see \Fiber} the driver started; calling this outside
  * a fiber raises a {@see \FiberError}, which is the correct signal that streaming
  * was wired up without a driver.
+ *
+ * Before parking it announces the await tree to the runtime with an
+ * {@see \Qcodr\Restate\Sdk\Protocol\Message\AwaitingOnMessage} (V7): on an open bidi
+ * stream the runtime only pushes a completion/signal once it knows the invocation is
+ * waiting on it, so without this a parked invocation never receives an external CANCEL
+ * signal or an awakeable resolved by another invocation.
  */
 final class FiberSuspender implements Suspender
 {
     public function park(StateMachine $vm, Future $awaitTree, Closure $isResolved): void
     {
+        $vm->writeAwaitingOn($awaitTree);
         Fiber::suspend(new ParkSignal($awaitTree, $isResolved));
     }
 }

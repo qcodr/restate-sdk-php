@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Qcodr\Restate\Sdk\Vm\AwakeableId;
 
 /**
- * Verifies the public awakeable id encoding: the literal `prom_1` prefix followed by
+ * Verifies the public awakeable id encoding: the literal `sign_1` prefix followed by
  * the unpadded url-safe Base64 of the invocation id concatenated with the signal
  * index as a 32-bit big-endian unsigned integer.
  */
@@ -16,26 +16,26 @@ final class AwakeableIdTest extends TestCase
 {
     public function testEncodesAKnownVector(): void
     {
-        self::assertSame('prom_1aW52LTEAAAAR', AwakeableId::encode('inv-1', 17));
+        self::assertSame('sign_1aW52LTEAAAAR', AwakeableId::encode('inv-1', 17));
     }
 
     public function testEncodesAKnownVectorForALongerInvocationId(): void
     {
         self::assertSame(
-            'prom_1bXktaW52b2NhdGlvbi1pZAAAABE',
+            'sign_1bXktaW52b2NhdGlvbi1pZAAAABE',
             AwakeableId::encode('my-invocation-id', 17),
         );
     }
 
     public function testStartsWithTheProtocolPrefix(): void
     {
-        self::assertStringStartsWith('prom_1', AwakeableId::encode('inv-1', 1));
+        self::assertStringStartsWith('sign_1', AwakeableId::encode('inv-1', 1));
     }
 
     public function testSuffixDecodesBackToInvocationIdAndBigEndianSignalIndex(): void
     {
         $id = AwakeableId::encode('inv-7', 259);
-        $suffix = \substr($id, \strlen('prom_1'));
+        $suffix = \substr($id, \strlen('sign_1'));
 
         // Restore the standard alphabet and padding, then decode and check the bytes:
         // invocation id followed by the signal index as uint32 big-endian.

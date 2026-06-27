@@ -658,7 +658,7 @@ final class RestateContextTest extends TestCase
         $awakeable = $ctx->awakeable();
 
         self::assertInstanceOf(Awakeable::class, $awakeable);
-        self::assertStringStartsWith('prom_1', $awakeable->id());
+        self::assertStringStartsWith('sign_1', $awakeable->id());
     }
 
     public function testAwakeableAwaitSuspendsAsSignal(): void
