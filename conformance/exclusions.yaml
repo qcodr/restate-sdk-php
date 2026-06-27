@@ -4,12 +4,12 @@
 # skips. Like the Rust SDK's own exclusions.yaml these are documented, legitimate gaps —
 # everything else passes against a real Restate runtime.
 #
-# Reasons:
-#  * Cancellation / KillInvocation — cancelling a *suspended* invocation requires the
-#    runtime to wake it to deliver the CANCEL signal. The SDK declares the cancel signal
-#    in its suspension await tree, but reliable cancel-on-suspend in Restate's
-#    request/response transport is not yet matched. The Rust SDK passes these over the
-#    bidirectional transport, which this SDK does not implement (see docs/adr/0001).
+# Cancellation / KillInvocation now PASS over the bidirectional (amp) transport against a
+# V7-enabled runtime (build conformance/Dockerfile.restate-v7 — Restate negotiates service
+# protocol V6 by default, on which the SDK's signal/awakeable model is invalid). They are
+# therefore no longer excluded. See docs/adr/0001.
+#
+# Reasons (remaining):
 #  * Combinators.awaitAny* — awaitAny/awaitAnySuccessful over a mix of awakeables/timers/
 #    runs has a documented limitation (the Rust SDK excludes the same tests).
 #  * Ingress.rawHandler — per-handler raw (octet-stream) serde is not yet implemented.
@@ -18,63 +18,42 @@
 #  * UpgradeWithInFlightInvocation — deployment upgrade while an invocation is in flight.
 exclusions:
   "default":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "alwaysSuspending":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "singleThreadSinglePartition":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "threeNodes":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "threeNodesAlwaysSuspending":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "lazyState":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
   "persistedTimers":
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromContext"
-    - "dev.restate.sdktesting.tests.Cancellation.cancelFromAdminAPI"
-    - "dev.restate.sdktesting.tests.KillInvocation.kill"
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
