@@ -3,7 +3,6 @@
 [![CI](https://github.com/qcodr/restate-sdk-php/actions/workflows/ci.yml/badge.svg)](https://github.com/qcodr/restate-sdk-php/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/qcodr/restate-sdk-php/branch/main/graph/badge.svg)](https://codecov.io/gh/qcodr/restate-sdk-php)
 [![PHPStan level max](https://img.shields.io/badge/PHPStan-level%20max-brightgreen.svg)](phpstan.neon)
-[![Psalm type coverage](https://shepherd.dev/github/qcodr/restate-sdk-php/coverage.svg)](https://shepherd.dev/github/qcodr/restate-sdk-php)
 [![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2Fqcodr%2Frestate-sdk-php%2Fmain)](https://dashboard.stryker-mutator.io/reports/github.com/qcodr/restate-sdk-php/main)
 [![Latest Stable Version](https://img.shields.io/packagist/v/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
 [![Total Downloads](https://img.shields.io/packagist/dt/qcodr/restate-sdk-php.svg)](https://packagist.org/packages/qcodr/restate-sdk-php)
@@ -17,12 +16,15 @@
 A pure-PHP SDK for [Restate](https://restate.dev) — durable execution for
 **Services**, **Virtual Objects**, and **Workflows**. It mirrors the
 [Rust SDK](https://github.com/restatedev/sdk-rust) surface with idiomatic PHP:
-attributes for service definitions, a typed context API, and a Swoole-based server.
+attributes for service definitions, a typed context API, and a true bidirectional
+HTTP/2 streaming server.
 
 The Restate **service protocol (v5–v7)** is implemented from scratch in pure PHP —
-framing, protobuf messages, the journal/replay state machine, and suspension — so
-the SDK has no native-extension dependency for its core (only the server transport
-needs `ext-swoole`).
+framing, protobuf messages, the journal/replay state machine, suspension, and
+signals — so the SDK has **no native-extension dependency**: the default server
+(`AmpStreamingServer`) runs on pure-PHP [amphp/http-server](https://amphp.org), and
+a request/response Swoole server, a PSR-15 adapter, and an AWS Lambda handler are
+available as alternative transports.
 
 ## Features
 
@@ -40,13 +42,15 @@ needs `ext-swoole`).
 ## Requirements
 
 - PHP **8.2+** (`ext-json`, `ext-mbstring`)
-- `ext-swoole` to run the server (provided by the Docker image)
+- `amphp/http-server` to run the default bidirectional-streaming server
+  (or `ext-swoole` for the request/response Swoole server)
 - Docker + Docker Compose for end-to-end testing
 
 ## Installation
 
 ```bash
 composer require qcodr/restate-sdk-php
+composer require amphp/http-server   # the default server transport
 ```
 
 ## Quick start
@@ -86,27 +90,33 @@ final class Counter
 }
 ```
 
-Serve them:
+Serve them over true bidirectional HTTP/2 streaming (the default server):
 
 ```php
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
-use Qcodr\Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
+use Qcodr\Restate\Sdk\Server\AmpStreamingServer;
 
 $endpoint = Endpoint::builder()
     ->bind(new Greeter())
     ->bind(new Counter())
+    ->protocolMode(ProtocolMode::BidiStream)
     ->build();
 
-(new SwooleServer($endpoint))->listen('0.0.0.0', 9080);
+(new AmpStreamingServer($endpoint))->listen('0.0.0.0', 9080);
 ```
 
 Register the deployment with a running Restate server, then invoke through the ingress:
 
 ```bash
-restate deployments register http://localhost:9080 --use-http1.1
-curl localhost:8080/Greeter/greet      -d '"world"'   # "Greetings world"
-curl localhost:8080/Counter/acme/add   -d '5'         # 5
+restate deployments register http://localhost:9080
+curl localhost:8080/Greeter/greet    -H 'content-type: application/json' -d '"world"'  # "Greetings world"
+curl localhost:8080/Counter/acme/add -H 'content-type: application/json' -d '5'         # 5
 ```
+
+> Drop `->protocolMode(ProtocolMode::BidiStream)` (and add `--use-http1.1` when
+> registering) to serve plain request/response over the same amphp host, or swap in
+> `SwooleServer` / the PSR-15 / Lambda adapters — see **Transports** below.
 
 ## Workflows & durable promises
 
@@ -136,7 +146,7 @@ final class SignupWorkflow
 ## Context API
 
 > **Service classes must be stateless.** A bound service instance is shared across
-> concurrent invocations within a Swoole worker — keep per-invocation data in local
+> concurrent invocations within the server process — keep per-invocation data in local
 > variables or Restate state (`$ctx->set(...)`), never in mutable instance properties.
 
 | Capability      | Methods |
@@ -166,7 +176,8 @@ tuned transient failure; any other throwable is a plain transient error (retried
 `ctx->logger()` returns a **PSR-3** logger that suppresses records emitted during
 replay, so each line is logged exactly once even though handlers re-run from the top
 on every slice. Provide the underlying logger (e.g. Monolog) when constructing the
-server: `new SwooleServer($endpoint, logger: $myLogger)` (defaults to a null logger).
+server: `new AmpStreamingServer($endpoint, logger: $myLogger)` (defaults to a null
+logger).
 
 For distributed **tracing**, mind the propagation boundary:
 
@@ -213,10 +224,20 @@ $endpoint = Endpoint::builder()
     ->build();
 ```
 
-**Transports.** Besides `SwooleServer`, the framework-agnostic core is hostable via a
-**PSR-15** adapter (`Qcodr\Restate\Sdk\Server\Psr15Handler`) in any Slim/Mezzio stack, on
-**AWS Lambda** (`Qcodr\Restate\Sdk\Server\LambdaHandler` — Function URL / API Gateway proxy),
-and directly via `RequestProcessor` (bytes in → bytes out).
+**Transports.** The default `AmpStreamingServer` (pure-PHP amphp) serves true
+bidirectional HTTP/2 streaming. One amphp process is a single event loop; pass a worker
+count to pre-fork N processes that share the port via `SO_REUSEPORT` (needs `ext-pcntl`)
+and scale across cores like a Swoole worker pool:
+
+```php
+(new AmpStreamingServer($endpoint))->listen('0.0.0.0', 9080, workers: 8); // 0 = one per CPU
+```
+
+The same framework-agnostic core is also hostable request/response via the **Swoole**
+server (`Qcodr\Restate\Sdk\Server\SwooleServer`, needs `ext-swoole`), a **PSR-15** adapter
+(`Qcodr\Restate\Sdk\Server\Psr15Handler`) in any Slim/Mezzio stack, on **AWS Lambda**
+(`Qcodr\Restate\Sdk\Server\LambdaHandler` — Function URL / API Gateway proxy), and directly
+via `RequestProcessor` (bytes in → bytes out).
 
 **Typed clients.** `bin/restate-codegen <ServiceClass> [outDir] [namespace]` generates
 an IDE-autocompletable client so callers write
@@ -244,7 +265,8 @@ self-contained, runnable endpoint.
 | `services.php` | the canonical Service + Virtual Object + Workflow trio |
 | `tracing.php` | replay-aware PSR-3 logging (run standalone: `php examples/tracing.php`) |
 
-Run a single example with the bundled server:
+Run a single example with the bundled server (amphp; the per-example endpoints are
+request/response, so `--use-http1.1` is fine):
 
 ```bash
 php bin/restate-serve examples/counter.php          # serves on :9080
@@ -252,10 +274,10 @@ restate deployments register http://localhost:9080 --use-http1.1
 curl localhost:8080/Counter/my-key/increment
 ```
 
-Or bring all of them up live (Docker), against a real runtime:
+Or bring all of them up live (Docker) over true bidi HTTP/2, against a real runtime:
 
 ```bash
-make examples            # builds + registers the example endpoint
+make examples            # builds + registers the example endpoint (bidi)
 curl localhost:8080/FanOut/fanOut     # -> "Completed in order: fast, medium, slow"
 ```
 
@@ -311,8 +333,10 @@ make sast      # psalm taint analysis (SAST)             (== composer sast)
 make check     # lint + sast + unit tests (pre-commit)   (== composer check)
 ```
 
-> The Compose file pins `restatedev/restate:1.5.2`. The `:latest` image targets
-> newer CPUs (AVX2) and may crash on older hardware.
+> The Compose file pins `restatedev/restate:1.5.2` (the last AVX2-free image, so it
+> runs on older hardware); it already serves the bidi examples. Override with
+> `RESTATE_IMAGE=...` for a newer runtime — V7 cancellation/signals over bidi needs
+> ≥ 1.7 (which needs AVX2), as covered in [`conformance/README.md`](conformance/README.md).
 
 ## Architecture
 
@@ -325,14 +349,17 @@ src/
   Context/    typed context API (Service / Object / Workflow) over the VM
   Serde/      JSON (de)serialization
   Endpoint/   framework-agnostic RequestProcessor + transport DTOs
-  Server/     SwooleServer transport adapter
+  Server/     transport adapters: AmpStreamingServer (default, bidi), Swoole, PSR-15, Lambda
 ```
 
 The framework-agnostic `RequestProcessor` (bytes in → bytes out) is the testable
-core; `SwooleServer` is one swappable transport. Transport mode is
-`REQUEST_RESPONSE`: the runtime sends `StartMessage` + the replayed journal, the SDK
-processes one slice and suspends when it awaits a result it does not yet have; the
-runtime re-invokes with a longer journal and the handler replays from the top.
+core; each server is one swappable transport. The default `AmpStreamingServer`
+advertises `BIDI_STREAM`: the runtime keeps the invocation channel open in both
+directions, streaming the journal and late completions/signals, so a parked await is
+resumed on the next result instead of writing a suspension. The request/response
+transports (`SwooleServer`, PSR-15, Lambda) advertise `REQUEST_RESPONSE` instead: the
+SDK processes one slice and suspends when it awaits a result it does not yet have, and
+the runtime re-invokes with a longer journal so the handler replays from the top.
 
 ## License
 

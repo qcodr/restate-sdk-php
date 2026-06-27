@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Endpoint;
 
+use Closure;
+use Fiber;
 use Psr\Log\LoggerInterface;
 use Qcodr\Restate\Sdk\Context\Clock;
 use Qcodr\Restate\Sdk\Discovery\DiscoveryContentType;
@@ -12,6 +14,7 @@ use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Serde\Serde;
 use Qcodr\Restate\Sdk\Vm\FiberSuspender;
 use Qcodr\Restate\Sdk\Vm\StateMachine;
+use Qcodr\Restate\Sdk\Vm\SwitchableOutputSink;
 
 /**
  * The framework-agnostic core of the deployment endpoint.
@@ -179,6 +182,86 @@ final class RequestProcessor
             $target->handler,
             $io,
         );
+    }
+
+    /**
+     * Attempts to run the journal-replay phase and the handler's first execution slice
+     * inline (in the calling fiber), eliminating the `async()` task and outbound
+     * {@see \Amp\Pipeline\Queue} for handlers that complete without parking.
+     *
+     * The caller provides `$readChunk` — a closure that reads one raw byte-string from
+     * the inbound transport and returns null at EOF — so this method stays transport-
+     * agnostic. Typically `fn() => $requestBody->read()`.
+     *
+     * Returns a {@see StreamingInlineResult}:
+     *
+     *  - `completed === true`: handler finished in this slice; `$output` is the full
+     *    encoded body.  Return a `ReadableBuffer($output)` response, no continuation.
+     *
+     *  - `completed === false`: handler is parked; `$output` is the preamble to flush,
+     *    and `$vm`/`$handlerFiber`/`$park`/`$switchSink` are set.  The caller must call
+     *    {@see SwitchableOutputSink::switchToDownstream} then {@see continueStreamingFromPark}.
+     *
+     * @param Closure(): ?string $readChunk
+     */
+    public function tryDriveStreamingInline(
+        StreamingInvocation $target,
+        Closure $readChunk,
+    ): StreamingInlineResult {
+        $switchSink = new SwitchableOutputSink();
+        $vm = new StateMachine($target->version, new FiberSuspender(), $switchSink);
+
+        $inlineState = $this->invocationDriver->tryStartInline(
+            $vm,
+            $target->service,
+            $target->handler,
+            $readChunk,
+        );
+
+        if ($inlineState === null) {
+            // Handler completed or EOF during journal; all output is already in the sink.
+            return new StreamingInlineResult(
+                completed: true,
+                output: $switchSink->takeBuffer(),
+                vm: null,
+                handlerFiber: null,
+                park: null,
+                switchSink: null,
+            );
+        }
+
+        /** @var Fiber<mixed, mixed, mixed, mixed> $fiber */
+        [$fiber, $park] = $inlineState;
+
+        return new StreamingInlineResult(
+            completed: false,
+            output: $switchSink->takeBuffer(),
+            vm: $vm,
+            handlerFiber: $fiber,
+            park: $park,
+            switchSink: $switchSink,
+        );
+    }
+
+    /**
+     * Continues an invocation that was left parked by {@see tryDriveStreamingInline}.
+     * Routes late completions from `$io` to the VM, resumes the handler fiber on each
+     * satisfiable park, and closes `$io` when the fiber terminates or EOF arrives.
+     *
+     * Must only be called when `$result->completed === false`.
+     */
+    public function continueStreamingFromPark(StreamingInlineResult $result, StreamTransport $io): void
+    {
+        $vm = $result->vm;
+        $fiber = $result->handlerFiber;
+
+        if ($vm === null || $fiber === null) {
+            $io->close();
+
+            return;
+        }
+
+        $this->invocationDriver->continueFromPark($vm, $fiber, $result->park, $io);
     }
 
     /**

@@ -1,41 +1,57 @@
 #!/usr/bin/env bash
 #
-# End-to-end load / latency / memory benchmark.
+# End-to-end load / latency / memory benchmark for one transport.
 #
-# Drives a real request path: oha -> Restate ingress -> the runtime -> the PHP Swoole
-# endpoint (this SDK) -> response. Latency and throughput come from oha; the Swoole
-# worker's resident memory is sampled with `docker stats` during a sustained run to
-# detect leaks. Everything is containerized — the only host requirement is Docker.
+# Drives a real request path: oha -> Restate ingress -> the runtime -> the PHP endpoint
+# (this SDK) -> response. Latency and throughput come from oha; the endpoint's resident
+# memory is sampled with `docker stats` during a sustained run to detect leaks.
+# Everything is containerized — the only host requirement is Docker.
+#
+# Two transports serve the identical BenchGreeter so they compare head to head:
+#   TRANSPORT=swoole  request/response over Swoole       (docker/php, bench-endpoint.php)
+#   TRANSPORT=amp     true bidi HTTP/2 over amphp         (docker/php-amp, bench-endpoint-amp.php)
 #
 # Usage:
-#   benchmarks/e2e/run.sh
+#   benchmarks/e2e/run.sh                       # TRANSPORT=swoole (default)
+#   TRANSPORT=amp benchmarks/e2e/run.sh
 #   DURATION=60s CONNECTIONS=100 benchmarks/e2e/run.sh
-#   KEEP_UP=1 benchmarks/e2e/run.sh        # leave the stack running afterwards
+#   KEEP_UP=1 benchmarks/e2e/run.sh             # leave the stack running afterwards
 #
 # Env:
-#   DURATION     load duration per oha run            (default 30s)
-#   CONNECTIONS  concurrent connections               (default 50)
-#   HANDLER      ingress path to hit                  (default /Greeter/greet)
-#   BODY         JSON request body                    (default "world")
-#   INGRESS      ingress base URL                     (default http://localhost:8080)
-#   OHA_IMAGE    load-generator image                 (default ghcr.io/hatoo/oha:latest)
+#   TRANSPORT    swoole | amp                          (default swoole)
+#   RESTATE_IMAGE  runtime image (bidi needs >=1.7)    (compose default 1.5.2)
+#   DURATION     load duration per oha run             (default 30s)
+#   CONNECTIONS  concurrent connections                (default 50)
+#   HANDLER      ingress path to hit                   (default /BenchGreeter/greet)
+#   BODY         JSON request body                     (default "world")
+#   INGRESS      ingress base URL                      (default http://localhost:8080)
+#   OHA_IMAGE    load-generator image                  (default ghcr.io/hatoo/oha:latest)
 
 set -euo pipefail
+
+TRANSPORT="${TRANSPORT:-swoole}"
+case "$TRANSPORT" in
+    swoole) ENDPOINT_SERVICE="bench-endpoint-swoole"; USE_HTTP_11=true  ;;  # request/response
+    amp)    ENDPOINT_SERVICE="bench-endpoint-amp";    USE_HTTP_11=false ;;  # bidi needs HTTP/2
+    *) echo "Unknown TRANSPORT='$TRANSPORT' (want swoole|amp)" >&2; exit 2 ;;
+esac
 
 DURATION="${DURATION:-30s}"
 MEM_DURATION="${MEM_DURATION:-180s}"   # longer window so the leak slope is post-warmup
 CONNECTIONS="${CONNECTIONS:-50}"
-HANDLER="${HANDLER:-/Greeter/greet}"
+HANDLER="${HANDLER:-/BenchGreeter/greet}"
 BODY="${BODY:-\"world\"}"
 INGRESS="${INGRESS:-http://localhost:8080}"
 ADMIN="${ADMIN:-http://localhost:9070}"
 OHA_IMAGE="${OHA_IMAGE:-ghcr.io/hatoo/oha:latest}"
-ENDPOINT_SERVICE="examples-endpoint"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="$ROOT/build/benchmarks"
 mkdir -p "$OUT_DIR"
 cd "$ROOT"
+
+OHA_OUT="$OUT_DIR/e2e-oha-$TRANSPORT.json"
+MEM_OUT="$OUT_DIR/e2e-mem-$TRANSPORT.csv"
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
@@ -49,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log "Bringing up Restate 1.5.2 + Swoole endpoint"
+log "Bringing up Restate + $TRANSPORT endpoint ($ENDPOINT_SERVICE)"
 docker compose up -d --build restate "$ENDPOINT_SERVICE"
 
 log "Waiting for health"
@@ -60,10 +76,10 @@ for _ in $(seq 1 60); do
     sleep 2
 done
 
-log "Registering deployment"
+log "Registering deployment (use_http_11=$USE_HTTP_11)"
 curl -fsS -X POST "$ADMIN/deployments" \
     -H 'content-type: application/json' \
-    -d "{\"uri\":\"http://$ENDPOINT_SERVICE:9080\",\"use_http_11\":true,\"force\":true}" >/dev/null
+    -d "{\"uri\":\"http://$ENDPOINT_SERVICE:9080\",\"use_http_11\":$USE_HTTP_11,\"force\":true}" >/dev/null
 echo "registered"
 
 log "Warmup"
@@ -78,9 +94,9 @@ log "Load: oha -z $DURATION -c $CONNECTIONS POST $HANDLER"
 docker run --rm --network host "$OHA_IMAGE" \
     -z "$DURATION" -c "$CONNECTIONS" --no-tui --output-format json \
     -m POST -d "$BODY" -H 'content-type: application/json' \
-    "$INGRESS$HANDLER" > "$OUT_DIR/e2e-oha.json"
+    "$INGRESS$HANDLER" > "$OHA_OUT"
 
-# Sustained load in the background while we sample the worker's resident memory.
+# Sustained load in the background while we sample the endpoint's resident memory.
 log "Memory sampling under sustained load (leak check)"
 CID="$(docker compose ps -q "$ENDPOINT_SERVICE")"   # compose prefixes the container name
 docker run --rm --network host "$OHA_IMAGE" \
@@ -89,8 +105,8 @@ docker run --rm --network host "$OHA_IMAGE" \
     "$INGRESS$HANDLER" >/dev/null 2>&1 &
 LOAD_PID=$!
 
-: > "$OUT_DIR/e2e-mem.csv"
-echo "seconds,mem_bytes" >> "$OUT_DIR/e2e-mem.csv"
+: > "$MEM_OUT"
+echo "seconds,mem_bytes" >> "$MEM_OUT"
 SECONDS_ELAPSED=0
 while kill -0 "$LOAD_PID" 2>/dev/null; do
     USAGE="$(docker stats --no-stream --format '{{.MemUsage}}' "$CID" 2>/dev/null | awk '{print $1}')" || USAGE=""
@@ -102,14 +118,14 @@ mult = {"B":1,"KiB":1024,"MiB":1024**2,"GiB":1024**3,"TiB":1024**4,"KB":1000,"MB
 print(int(float(m.group(1))*mult.get(m.group(2),1)) if m else 0)
 PY
 )" || BYTES=0
-    echo "$SECONDS_ELAPSED,$BYTES" >> "$OUT_DIR/e2e-mem.csv"
+    echo "$SECONDS_ELAPSED,$BYTES" >> "$MEM_OUT"
     sleep 3
     SECONDS_ELAPSED=$((SECONDS_ELAPSED+3))
 done
 wait "$LOAD_PID" 2>/dev/null || true
 
-log "Summary"
-python3 - "$OUT_DIR/e2e-oha.json" "$OUT_DIR/e2e-mem.csv" <<'PY'
+log "Summary ($TRANSPORT)"
+python3 - "$OHA_OUT" "$MEM_OUT" <<'PY'
 import json, sys
 oha = json.load(open(sys.argv[1]))
 s = oha.get("summary", {})
@@ -125,7 +141,7 @@ rows = [l.strip().split(",") for l in open(sys.argv[2]).read().splitlines()[1:] 
 mem = [(int(t), int(b)) for t, b in rows if b.isdigit() and int(b) > 0]
 if len(mem) >= 2:
     # Slope over the steady-state window (ignore the first 30s of warmup: opcache,
-    # Swoole connection buffers) so the leak verdict reflects sustained behavior.
+    # connection buffers) so the leak verdict reflects sustained behavior.
     cutoff = min(30, mem[-1][0] // 2)
     steady = [m for m in mem if m[0] >= cutoff] or mem
     # Least-squares slope over the steady window: robust to docker-stats' ~0.1 MiB
@@ -137,10 +153,10 @@ if len(mem) >= 2:
     slope = sum((t - mt) * (b - mb) for t, b in steady) / denom * 60 / 1e6  # MB/min
     peak = max(b for _, b in mem)
     span = steady[-1][0] - steady[0][0]
-    print(f"  worker RSS   : start {mem[0][1]/1e6:.1f} MB, peak {peak/1e6:.1f} MB")
+    print(f"  endpoint RSS : start {mem[0][1]/1e6:.1f} MB, peak {peak/1e6:.1f} MB")
     print(f"  steady slope : {slope:+.2f} MB/min (least-squares over {span}s, n={n}) "
           f"({'no leak' if abs(slope) < 0.5 else 'investigate'})")
 PY
 
 echo
-echo "Raw: $OUT_DIR/e2e-oha.json, $OUT_DIR/e2e-mem.csv"
+echo "Raw: $OHA_OUT, $MEM_OUT"

@@ -4,13 +4,20 @@
 declare(strict_types=1);
 
 /**
- * Boots a Restate deployment endpoint over Swoole.
+ * Boots a Restate deployment endpoint over the bidirectional-streaming HTTP/2 host
+ * ({@see Qcodr\Restate\Sdk\Server\AmpStreamingServer}, the SDK's default server).
  *
  * Usage:
  *   restate-serve [bootstrap.php] [host] [port]
  *
  * The bootstrap file must return a Qcodr\Restate\Sdk\Endpoint\Endpoint. Defaults:
  * bootstrap = ./restate.php, host = 0.0.0.0, port = $PORT or 9080.
+ *
+ * The server serves whatever protocol mode the endpoint declares: an endpoint built
+ * with `->protocolMode(ProtocolMode::BidiStream)` is driven over true bidi HTTP/2;
+ * a plain request/response endpoint is buffered over the same h2c host. Requires
+ * amphp/http-server (a composer `suggest`); install it with
+ * `composer require amphp/http-server`.
  *
  * Example bootstrap (restate.php):
  *   <?php
@@ -19,7 +26,7 @@ declare(strict_types=1);
  */
 
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
-use Qcodr\Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Server\AmpStreamingServer;
 
 (static function (array $argv): void {
     foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'] as $autoload) {
@@ -44,5 +51,5 @@ use Qcodr\Restate\Sdk\Server\SwooleServer;
         exit(1);
     }
 
-    (new SwooleServer($endpoint))->listen($host, $port);
+    (new AmpStreamingServer($endpoint))->listen($host, $port);
 })($argv);

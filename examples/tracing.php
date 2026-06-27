@@ -13,7 +13,8 @@ use Psr\Log\AbstractLogger;
 use Qcodr\Restate\Sdk\Context\Context;
 use Qcodr\Restate\Sdk\Context\TraceContext;
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
-use Qcodr\Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
+use Qcodr\Restate\Sdk\Server\AmpStreamingServer;
 use Qcodr\Restate\Sdk\Service\Attribute\Handler;
 use Qcodr\Restate\Sdk\Service\Attribute\Service;
 use Stringable;
@@ -104,5 +105,8 @@ $logger = new class () extends AbstractLogger {
     }
 };
 
-$endpoint = Endpoint::builder()->bind(new TracingGreeter())->build();
-(new SwooleServer($endpoint, logger: $logger))->listen('0.0.0.0', (int) (\getenv('PORT') ?: 9080));
+$endpoint = Endpoint::builder()
+    ->bind(new TracingGreeter())
+    ->protocolMode(ProtocolMode::BidiStream)
+    ->build();
+(new AmpStreamingServer($endpoint, logger: $logger))->listen('0.0.0.0', (int) (\getenv('PORT') ?: 9080));

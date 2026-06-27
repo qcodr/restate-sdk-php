@@ -5,14 +5,23 @@ declare(strict_types=1);
 namespace Restate\Examples;
 
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
-use Qcodr\Restate\Sdk\Server\SwooleServer;
+use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
+use Qcodr\Restate\Sdk\Server\AmpStreamingServer;
 
 require __DIR__ . '/../vendor/autoload.php';
 
 /**
- * Serves every example service on one endpoint (port 9080). Each example file
- * defines its class and returns its own single-service endpoint; requiring them
- * here just loads the class definitions so they can be bound together.
+ * Serves every example service on one endpoint (port 9080) over true bidirectional
+ * HTTP/2 (h2c) streaming via {@see AmpStreamingServer} — the SDK's default server.
+ * Each example file defines its class and returns its own single-service endpoint;
+ * requiring them here just loads the class definitions so they can be bound together.
+ *
+ * The endpoint opts into {@see ProtocolMode::BidiStream}: discovery advertises
+ * BIDI_STREAM and the Restate runtime keeps the invocation channel open in both
+ * directions, so a parked await is resumed on the next streamed result instead of
+ * writing a suspension and re-invoking.
+ *
+ * Requires amphp/http-server (a composer `suggest`) and NO ext-swoole.
  *
  * Run directly:   php examples/endpoint.php
  * Or per example: php bin/restate-serve examples/counter.php
@@ -36,6 +45,7 @@ $endpoint = Endpoint::builder()
     ->bind(new MyService())
     ->bind(new MyVirtualObject())
     ->bind(new MyWorkflow())
+    ->protocolMode(ProtocolMode::BidiStream)
     ->build();
 
-(new SwooleServer($endpoint))->listen('0.0.0.0', (int) (\getenv('PORT') ?: 9080));
+(new AmpStreamingServer($endpoint))->listen('0.0.0.0', (int) (\getenv('PORT') ?: 9080));
