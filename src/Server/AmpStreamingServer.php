@@ -68,6 +68,19 @@ final class AmpStreamingServer
     private const STREAM_IDLE_TIMEOUT_SECONDS = 3600;
     private const CONNECTION_IDLE_TIMEOUT_SECONDS = 3600;
 
+    /**
+     * Connection / concurrency ceilings handed to amphp. The Restate runtime is a single
+     * trusted peer that opens one long-lived bidi connection per in-flight invocation, all
+     * from the same IP, so amphp's defaults (1000 total, 10 per IP, 1000 concurrent) are
+     * far too low: at ~10 the runtime is denied new connections ("too many existing
+     * connections"), which surfaces as broken-pipe / unexpected-frame errors and dropped
+     * invocations under load. Raised so the runtime — not amphp — governs how many
+     * invocations run at once.
+     */
+    private const CONNECTION_LIMIT = 100_000;
+    private const CONNECTION_LIMIT_PER_IP = 100_000;
+    private const CONCURRENCY_LIMIT = 100_000;
+
     private readonly RequestProcessor $processor;
     private readonly LoggerInterface $logger;
 
@@ -110,6 +123,9 @@ final class AmpStreamingServer
         // accepted (verified against a real runtime in the conformance suite).
         $server = SocketHttpServer::createForDirectAccess(
             $this->logger,
+            connectionLimit: self::CONNECTION_LIMIT,
+            connectionLimitPerIp: self::CONNECTION_LIMIT_PER_IP,
+            concurrencyLimit: self::CONCURRENCY_LIMIT,
             httpDriverFactory: new DefaultHttpDriverFactory(
                 $this->logger,
                 streamTimeout: self::STREAM_IDLE_TIMEOUT_SECONDS,
