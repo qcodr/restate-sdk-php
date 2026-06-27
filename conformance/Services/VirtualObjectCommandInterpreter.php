@@ -25,15 +25,16 @@ use ReflectionProperty;
  *   - "awk-{awakeableKey}"  the awakeable id registered for that key (string)
  *   - "results"             the ordered list<string> of per-command results
  *
- * Limitations (vs. the contract) — both apply only to the `awaitAny` /
- * `awaitAnySuccessful` combinators, whose conformance tests are excluded (they are
- * unsupported in the Rust SDK too):
- *   1. A `runThrowTerminalException` awaitable cannot be raced concurrently, because
- *      the PHP SDK's run() is blocking and exposes no future handle; it raises a
- *      terminal failure if used inside those combinators. It IS supported in `awaitOne`.
- *   2. A `sleep` awaitable yields "" instead of "sleep" inside those combinators,
- *      because a bare durable timer future resolves to null with no way to remap it.
- *      In `awaitOne`, `sleep` correctly yields "sleep".
+ * Awaitable commands (createAwakeable, createSignal, sleep, runReturns,
+ * runThrowTerminalException) are all raceable inside the combinators: a run is driven
+ * through {@see Context::runAsync}, which proposes the side effect and returns its
+ * completion future without blocking, and a named signal through
+ * {@see Context::createSignal}.
+ *
+ * Limitation (vs. the contract): a `sleep` awaitable yields "" instead of "sleep"
+ * inside the `select`-based combinators (`awaitAny` / `awaitFirstCompleted`), because a
+ * bare durable timer future resolves to null with no way to remap it. In `awaitOne` and
+ * `awaitAllCompleted` (which renders by command type), `sleep` correctly yields "sleep".
  */
 #[VirtualObject(name: 'VirtualObjectCommandInterpreter')]
 final class VirtualObjectCommandInterpreter
@@ -64,10 +65,28 @@ final class VirtualObjectCommandInterpreter
                     break;
 
                 case 'awaitAnySuccessful':
+                case 'awaitFirstSucceededOrAllFailed':
                     // First awaitable to SUCCEED wins.
                     $lastResult = self::asString(
                         $ctx->awaitAny(...$this->awaitableFutures($ctx, $command['commands'])),
                     );
+                    break;
+
+                case 'awaitFirstCompleted':
+                    // First awaitable to COMPLETE (success or failure) wins — like awaitAny.
+                    [, $firstValue] = $ctx->select(...$this->awaitableFutures($ctx, $command['commands']));
+                    $lastResult = self::asString($firstValue);
+                    break;
+
+                case 'awaitAllCompleted':
+                    // Settle EVERY awaitable, rendering each `ok:<value>` / `err:<reason>`.
+                    $lastResult = $this->awaitAllCompleted($ctx, $command['commands']);
+                    break;
+
+                case 'awaitAllSucceededOrFirstFailed':
+                    // All must succeed (values joined); the first failure short-circuits.
+                    $values = $ctx->awaitAllSucceeded($this->awaitableFutures($ctx, $command['commands']));
+                    $lastResult = \implode('|', \array_map([self::class, 'asString'], $values));
                     break;
 
                 case 'awaitAwakeableOrTimeout':
@@ -183,10 +202,18 @@ final class VirtualObjectCommandInterpreter
 
                 return self::asString($awakeable->await());
 
+            case 'createSignal':
+                return self::asString($ctx->createSignal((string) $command['signalName'])->await());
+
             case 'sleep':
                 $ctx->sleep(((float) $command['timeoutMillis']) / 1000);
 
                 return 'sleep';
+
+            case 'runReturns':
+                $value = (string) ($command['value'] ?? '');
+
+                return self::asString($ctx->run('cmd', static fn (): string => $value));
 
             case 'runThrowTerminalException':
                 $reason = (string) ($command['reason'] ?? '');
@@ -198,6 +225,43 @@ final class VirtualObjectCommandInterpreter
             default:
                 throw new TerminalException("Unknown awaitable command type: {$type}");
         }
+    }
+
+    /**
+     * Settles every awaitable (success or failure) and renders each as `ok:<value>` or
+     * `err:<reason>`, joined with `|`. All futures are started up front, then awaited in
+     * turn (they run concurrently, so this waits for the slowest, not the sum).
+     *
+     * @param list<array<string, mixed>> $commands
+     */
+    private function awaitAllCompleted(ObjectContext $ctx, array $commands): string
+    {
+        $pairs = [];
+        foreach ($commands as $command) {
+            $pairs[] = [$command, $this->awaitableCommandFuture($ctx, $command)];
+        }
+
+        $parts = [];
+        foreach ($pairs as [$command, $future]) {
+            try {
+                $parts[] = 'ok:' . $this->renderAwaitableValue($command, $future->await());
+            } catch (TerminalException $e) {
+                $parts[] = 'err:' . $e->getMessage();
+            }
+        }
+
+        return \implode('|', $parts);
+    }
+
+    /**
+     * Renders a settled awaitable's value: a bare durable timer resolves to null, so a
+     * `sleep` command is rendered by its name rather than the empty value.
+     *
+     * @param array<string, mixed> $command
+     */
+    private function renderAwaitableValue(array $command, mixed $value): string
+    {
+        return ($command['type'] ?? '') === 'sleep' ? 'sleep' : self::asString($value);
     }
 
     /**
@@ -231,13 +295,27 @@ final class VirtualObjectCommandInterpreter
 
                 return self::awakeableFuture($awakeable);
 
+            case 'createSignal':
+                return $ctx->createSignal((string) $command['signalName']);
+
             case 'sleep':
                 return $ctx->timer(((float) $command['timeoutMillis']) / 1000);
 
+            case 'runReturns':
+                $value = (string) ($command['value'] ?? '');
+
+                return $ctx->runAsync('cmd', static fn (): string => $value);
+
+            case 'runThrowTerminalException':
+                $reason = (string) ($command['reason'] ?? '');
+
+                return $ctx->runAsync('cmd', static function () use ($reason): string {
+                    throw new TerminalException($reason);
+                });
+
             default:
-                // See the class-level limitation note: a blocking run cannot be raced.
                 throw new TerminalException(
-                    "AwaitableCommand '{$type}' is not supported inside awaitAny/awaitAnySuccessful in the PHP SDK",
+                    "AwaitableCommand '{$type}' is not supported inside combinators in the PHP SDK",
                 );
         }
     }

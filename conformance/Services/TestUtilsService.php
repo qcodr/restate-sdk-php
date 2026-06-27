@@ -103,4 +103,26 @@ final class TestUtilsService
     {
         $ctx->cancel($invocationId);
     }
+
+    /**
+     * Resolves a named signal on another invocation with a value.
+     *
+     * @param array{invocationId: string, signalName: string, value?: mixed} $req
+     */
+    #[Handler]
+    public function resolveSignal(Context $ctx, array $req): void
+    {
+        $ctx->resolveSignal((string) $req['invocationId'], (string) $req['signalName'], $req['value'] ?? '');
+    }
+
+    /**
+     * Rejects a named signal on another invocation with a terminal failure reason.
+     *
+     * @param array{invocationId: string, signalName: string, reason?: string} $req
+     */
+    #[Handler]
+    public function rejectSignal(Context $ctx, array $req): void
+    {
+        $ctx->rejectSignal((string) $req['invocationId'], (string) $req['signalName'], (string) ($req['reason'] ?? ''));
+    }
 }

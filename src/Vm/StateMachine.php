@@ -8,6 +8,7 @@ use Closure;
 use Qcodr\Restate\Sdk\Error\CancelledException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Frame;
+use Qcodr\Restate\Sdk\Protocol\Message\AwaitingOnMessage;
 use Qcodr\Restate\Sdk\Protocol\Message\CallCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\ClearAllStateCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\ClearStateCommand;
@@ -26,6 +27,7 @@ use Qcodr\Restate\Sdk\Protocol\Message\GetPromiseCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Header;
 use Qcodr\Restate\Sdk\Protocol\Message\InputCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Notification;
+use Qcodr\Restate\Sdk\Protocol\Message\NotificationResult;
 use Qcodr\Restate\Sdk\Protocol\Message\OneWayCallCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\OutgoingMessage;
 use Qcodr\Restate\Sdk\Protocol\Message\OutputCommand;
@@ -83,6 +85,25 @@ final class StateMachine
     private array $completions = [];
     /** @var array<int, Notification> signals keyed by signal index */
     private array $signals = [];
+    /** @var array<string, Notification> named signals keyed by their user-chosen name */
+    private array $namedSignals = [];
+    /**
+     * Invocation-id completion ids of the calls this handler has issued, in order. On
+     * cancellation they are used to propagate the cancel to those child invocations
+     * (implicit cancellation), so a cancelled parent tears down the calls it spawned.
+     *
+     * @var list<int>
+     */
+    private array $trackedInvocationIdCompletions = [];
+    /**
+     * Proposed `ctx.run` results awaiting the runtime's `ProposeRunCompletionAck`, keyed by
+     * completion id. Over streaming the runtime confirms a proposal with a lightweight ack
+     * (a control frame, processing-phase only) rather than echoing the value, so the result
+     * is stashed here at propose time and promoted into the completion table on the ack.
+     *
+     * @var array<int, Notification>
+     */
+    private array $pendingRunResults = [];
 
     private VmState $state = VmState::WaitingPreFlight;
 
@@ -167,6 +188,7 @@ final class StateMachine
         $input = null;
         $completions = [];
         $signals = [];
+        $namedSignals = [];
         $commandTypes = [];
 
         while ($consumed < $start->knownEntries) {
@@ -178,7 +200,7 @@ final class StateMachine
 
                 return; // need more bytes
             }
-            $this->classifyJournalFrame($frame, $knownCommands, $input, $completions, $signals, $commandTypes);
+            $this->classifyJournalFrame($frame, $knownCommands, $input, $completions, $signals, $namedSignals, $commandTypes);
             $consumed++;
         }
 
@@ -189,6 +211,7 @@ final class StateMachine
         $this->knownCommands = $knownCommands;
         $this->completions = $completions;
         $this->signals = $signals;
+        $this->namedSignals = $namedSignals;
         $this->journalCommandTypes = $commandTypes;
         $this->parsed = true;
         // Drop the (up to 64 MB) parsed journal; keep only any bytes past it. In
@@ -217,7 +240,11 @@ final class StateMachine
                     Notification::decode($frame->payload),
                     $this->completions,
                     $this->signals,
+                    $this->namedSignals,
                 );
+            } elseif ($type === MessageType::ProposeRunCompletionAck) {
+                // The runtime confirmed a proposed run; resolve it from the stashed value.
+                $this->resolveProposedRun(Notification::decode($frame->payload)->completionId);
             }
         }
 
@@ -227,11 +254,25 @@ final class StateMachine
     }
 
     /**
+     * Promotes a proposed `ctx.run` result into the completion table once the runtime acks
+     * it. The ack frame carries only the completion id (field 1); the value/failure was
+     * stashed at propose time, so this wakes the parked run with the result it proposed.
+     */
+    private function resolveProposedRun(?int $completionId): void
+    {
+        if ($completionId !== null && isset($this->pendingRunResults[$completionId])) {
+            $this->completions[$completionId] = $this->pendingRunResults[$completionId];
+            unset($this->pendingRunResults[$completionId]);
+        }
+    }
+
+    /**
      * @param int               $knownCommands by-ref command counter
      * @param InputCommand|null  $input         by-ref captured input command
-     * @param array<int, Notification> $completions  by-ref
-     * @param array<int, Notification> $signals      by-ref
-     * @param list<MessageType>        $commandTypes by-ref, appended per command frame
+     * @param array<int, Notification>    $completions  by-ref
+     * @param array<int, Notification>    $signals      by-ref
+     * @param array<string, Notification> $namedSignals by-ref
+     * @param list<MessageType>           $commandTypes by-ref, appended per command frame
      */
     private function classifyJournalFrame(
         Frame $frame,
@@ -239,6 +280,7 @@ final class StateMachine
         ?InputCommand &$input,
         array &$completions,
         array &$signals,
+        array &$namedSignals,
         array &$commandTypes,
     ): void {
         $type = $frame->type();
@@ -256,7 +298,7 @@ final class StateMachine
             return;
         }
         if ($type !== null && $type->isNotification()) {
-            $this->routeNotification(Notification::decode($frame->payload), $completions, $signals);
+            $this->routeNotification(Notification::decode($frame->payload), $completions, $signals, $namedSignals);
 
             return;
         }
@@ -265,13 +307,26 @@ final class StateMachine
     }
 
     /**
-     * @param array<int, Notification> $completions by-ref
-     * @param array<int, Notification> $signals     by-ref
+     * Routes a decoded notification into its table. The id fields are a protocol oneof —
+     * a completion id, a built-in/awakeable signal index, or a user-chosen signal name —
+     * so exactly one branch applies. Named signals (signal_name set) are keyed by name
+     * rather than index, since the receive side addresses them by the name another
+     * invocation sent to.
+     *
+     * @param array<int, Notification>    $completions  by-ref
+     * @param array<int, Notification>    $signals      by-ref
+     * @param array<string, Notification> $namedSignals by-ref
      */
-    private function routeNotification(Notification $notification, array &$completions, array &$signals): void
-    {
+    private function routeNotification(
+        Notification $notification,
+        array &$completions,
+        array &$signals,
+        array &$namedSignals,
+    ): void {
         if ($notification->completionId !== null) {
             $completions[$notification->completionId] = $notification;
+        } elseif ($notification->signalName !== null) {
+            $namedSignals[$notification->signalName] = $notification;
         } elseif ($notification->signalId !== null) {
             $signals[$notification->signalId] = $notification;
         }
@@ -417,6 +472,8 @@ final class StateMachine
             $idempotencyKey,
             $headers,
         ));
+        // Remember the callee so a cancel of this handler propagates to it.
+        $this->trackedInvocationIdCompletions[] = $invocationIdCompletionId;
 
         return [$invocationIdCompletionId, $resultCompletionId];
     }
@@ -499,16 +556,36 @@ final class StateMachine
     public function proposeRunCompletionSuccess(int $completionId, string $value): void
     {
         $this->appendOutput(ProposeRunCompletion::success($completionId, $value));
+        $this->pendingRunResults[$completionId] = new Notification(
+            $completionId,
+            null,
+            null,
+            NotificationResult::Value,
+            $value,
+            null,
+            null,
+            null,
+        );
     }
 
     public function proposeRunCompletionFailure(int $completionId, Failure $failure): void
     {
         $this->appendOutput(ProposeRunCompletion::failure($completionId, $failure));
+        $this->pendingRunResults[$completionId] = new Notification(
+            $completionId,
+            null,
+            null,
+            NotificationResult::Failure,
+            null,
+            $failure,
+            null,
+            null,
+        );
     }
 
     /**
      * Creates an awakeable: a signal slot plus the public id another invocation can
-     * use to complete it. The id is `prom_1` + base64url(invocationId ++ uint32be(idx)).
+     * use to complete it. The id is `sign_1` + base64url(invocationId ++ uint32be(idx)).
      *
      * @return array{0: string, 1: int} [awakeableId, signalId]
      */
@@ -521,6 +598,17 @@ final class StateMachine
     }
 
     public function sysCompleteAwakeable(CompleteAwakeableCommand $command): void
+    {
+        $this->ensureParsed();
+        $this->recordCommand($command);
+    }
+
+    /**
+     * Sends a named signal to another invocation (resolve or reject), journaling the
+     * command. Mirrors {@see sysCompleteAwakeable}: the {@see SendSignalCommand} carries
+     * the target invocation id, the signal name and the value/failure result.
+     */
+    public function sysSendSignal(SendSignalCommand $command): void
     {
         $this->ensureParsed();
         $this->recordCommand($command);
@@ -568,6 +656,26 @@ final class StateMachine
         return isset($this->signals[self::CANCEL_SIGNAL_ID]);
     }
 
+    /**
+     * Fails the current await with {@see CancelledException}, first propagating the cancel
+     * to the calls this handler issued (implicit cancellation): every tracked callee whose
+     * invocation id is already known is sent the built-in CANCEL signal, so a cancelled
+     * parent tears down the children it is blocked on rather than leaking them. Mirrors the
+     * cancellation branch of sdk-shared-core's `do_await`.
+     */
+    public function raiseCancellation(): never
+    {
+        foreach ($this->trackedInvocationIdCompletions as $completionId) {
+            $invocationId = ($this->completions[$completionId] ?? null)?->invocationId;
+            if ($invocationId !== null) {
+                $this->recordCommand(SendSignalCommand::cancel($invocationId));
+            }
+        }
+        $this->trackedInvocationIdCompletions = [];
+
+        throw new CancelledException();
+    }
+
     /** Returns the completion if ready, otherwise parks (or fails if cancelled). */
     public function awaitCompletion(int $completionId): Notification
     {
@@ -575,7 +683,7 @@ final class StateMachine
             return $this->completions[$completionId];
         }
         if ($this->isCancelled()) {
-            throw new CancelledException();
+            $this->raiseCancellation();
         }
 
         // Request/response parks by throwing (the lines below are unreachable there);
@@ -587,7 +695,7 @@ final class StateMachine
         );
 
         if ($this->isCancelled()) {
-            throw new CancelledException(); // cancel won the race
+            $this->raiseCancellation(); // cancel won the race
         }
 
         return $this->peekCompletion($completionId); // the driver guarantees its presence
@@ -604,7 +712,7 @@ final class StateMachine
             return $this->signals[$signalId];
         }
         if ($this->isCancelled()) {
-            throw new CancelledException();
+            $this->raiseCancellation();
         }
 
         $this->parkOn(
@@ -613,7 +721,7 @@ final class StateMachine
         );
 
         if ($this->isCancelled()) {
-            throw new CancelledException(); // cancel won the race
+            $this->raiseCancellation(); // cancel won the race
         }
 
         return $this->peekSignal($signalId); // the driver guarantees its presence
@@ -629,18 +737,56 @@ final class StateMachine
         return $this->signals[$signalId];
     }
 
+    public function isNamedSignalReady(string $name): bool
+    {
+        return isset($this->namedSignals[$name]);
+    }
+
+    /** Returns the named signal if ready, otherwise parks (or fails if cancelled). Mirrors {@see awaitSignal}. */
+    public function awaitNamedSignal(string $name): Notification
+    {
+        if (isset($this->namedSignals[$name])) {
+            return $this->namedSignals[$name];
+        }
+        if ($this->isCancelled()) {
+            $this->raiseCancellation();
+        }
+
+        $this->parkOn(
+            Future::forNamedSignal($name),
+            fn (): bool => isset($this->namedSignals[$name]) || $this->isCancelled(),
+        );
+
+        if ($this->isCancelled()) {
+            $this->raiseCancellation(); // cancel won the race
+        }
+
+        return $this->peekNamedSignal($name); // the driver guarantees its presence
+    }
+
+    /** Reads a ready named signal without consuming it (non-destructive; see {@see peekSignal}). */
+    public function peekNamedSignal(string $name): Notification
+    {
+        if (!isset($this->namedSignals[$name])) {
+            throw new ProtocolException("Named signal {$name} is not available");
+        }
+
+        return $this->namedSignals[$name];
+    }
+
     /**
      * Parks awaiting the first of several results to complete (race semantics).
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved    the combinator's readiness predicate, supplied
      *                                       by the caller; the streaming driver resumes only
      *                                       once it holds
      */
-    public function suspendAny(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAny(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::FirstCompleted), $isResolved);
     }
 
     /**
@@ -648,11 +794,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAll(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAll(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::AllCompleted), $isResolved);
     }
 
     /**
@@ -662,11 +809,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAnySucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAnySucceeded(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::FirstSucceededOrAllFailed), $isResolved);
     }
 
     /**
@@ -676,11 +824,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAllSucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAllSucceeded(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::AllSucceededOrFirstFailed), $isResolved);
     }
 
     /**
@@ -702,12 +851,32 @@ final class StateMachine
      */
     private function parkOn(Future $inner, Closure $isResolved): void
     {
-        $awaitOn = new Future(
+        $this->suspender->park($this, $this->guardWithCancel($inner), $isResolved);
+    }
+
+    /**
+     * Wraps an awaited future as `FirstCompleted([inner, CANCEL signal])` so the runtime
+     * wakes a suspended invocation when it is cancelled. Matching the canonical encoding
+     * matters: a single-leaf await (one completion or signal, no combinator) flattens its
+     * ids up next to the CANCEL signal — the runtime keys its cancel wake-up off that flat
+     * shape — while a real combinator stays nested under the guard.
+     */
+    private function guardWithCancel(Future $inner): Future
+    {
+        if ($inner->combinatorType === CombinatorType::Unknown && $inner->nestedFutures === []) {
+            return new Future(
+                waitingCompletions: $inner->waitingCompletions,
+                waitingSignals: [...$inner->waitingSignals, self::CANCEL_SIGNAL_ID],
+                waitingNamedSignals: $inner->waitingNamedSignals,
+                combinatorType: CombinatorType::FirstCompleted,
+            );
+        }
+
+        return new Future(
             waitingSignals: [self::CANCEL_SIGNAL_ID],
             nestedFutures: [$inner],
             combinatorType: CombinatorType::FirstCompleted,
         );
-        $this->suspender->park($this, $awaitOn, $isResolved);
     }
 
     /**
@@ -719,6 +888,18 @@ final class StateMachine
     {
         $this->appendOutput(new SuspensionMessage($awaitTree));
         $this->state = VmState::Closed;
+    }
+
+    /**
+     * Streaming only: announces the current await tree to the runtime with an
+     * {@see AwaitingOnMessage} so it pushes the awaited completions/signals — including
+     * external ones the SDK cannot pull, like the CANCEL signal or an awakeable another
+     * invocation resolves — onto the open bidi stream. Unlike {@see writeSuspension} it
+     * leaves the VM open: the handler stays parked until the driver feeds a result.
+     */
+    public function writeAwaitingOn(Future $awaitTree): void
+    {
+        $this->appendOutput(new AwaitingOnMessage($awaitTree));
     }
 
     // --- Termination ---

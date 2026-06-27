@@ -25,6 +25,19 @@ final class FutureTest extends TestCase
         self::assertTrue($reader->atEnd(), 'the default combinator must not be emitted');
     }
 
+    public function testForNamedSignalEncodesNameInFieldThree(): void
+    {
+        // A lone named-signal await: the name is a present string in field 3 and the
+        // default (Unknown = 0) combinator is omitted by proto3 scalar rules.
+        $reader = new Reader(Future::forNamedSignal('my-signal')->encode());
+
+        [$field, $wire] = $reader->readTag();
+        self::assertSame(3, $field);
+        self::assertSame(WireType::LENGTH_DELIMITED, $wire);
+        self::assertSame('my-signal', $reader->readLengthDelimited());
+        self::assertTrue($reader->atEnd(), 'the default combinator must not be emitted');
+    }
+
     public function testForCompletionEncodesPackedCompletionInFieldOne(): void
     {
         $reader = new Reader(Future::forCompletion(42)->encode());

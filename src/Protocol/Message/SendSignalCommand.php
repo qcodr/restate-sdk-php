@@ -13,7 +13,9 @@ use Qcodr\Restate\Sdk\Protocol\Protobuf\Writer;
  * index (`idx`) or by a custom `name`, and carries a result (void/value/failure).
  *
  * The {@see cancel} factory builds the cancellation signal: built-in CANCEL index 1
- * with a void result.
+ * with a void result. The {@see resolveNamed} / {@see rejectNamed} factories deliver
+ * a custom-named signal carrying a value or a failure — the send side of named
+ * signals (the receive side awaits via {@see Future::forNamedSignal}).
  */
 final class SendSignalCommand implements OutgoingMessage
 {
@@ -26,6 +28,8 @@ final class SendSignalCommand implements OutgoingMessage
         public readonly ?string $signalName,
         public readonly bool $void,
         public readonly string $name = '',
+        public readonly ?Value $value = null,
+        public readonly ?Failure $failure = null,
     ) {
     }
 
@@ -33,6 +37,18 @@ final class SendSignalCommand implements OutgoingMessage
     public static function cancel(string $targetInvocationId): self
     {
         return new self($targetInvocationId, self::CANCEL_SIGNAL_INDEX, null, true);
+    }
+
+    /** Resolves a custom-named signal on the target invocation with a value. */
+    public static function resolveNamed(string $targetInvocationId, string $signalName, Value $value): self
+    {
+        return new self($targetInvocationId, null, $signalName, false, '', $value, null);
+    }
+
+    /** Rejects a custom-named signal on the target invocation with a terminal failure. */
+    public static function rejectNamed(string $targetInvocationId, string $signalName, Failure $failure): self
+    {
+        return new self($targetInvocationId, null, $signalName, false, '', null, $failure);
     }
 
     public function messageType(): MessageType
@@ -50,7 +66,11 @@ final class SendSignalCommand implements OutgoingMessage
             $writer->writeUint32Present(2, $this->signalIdx ?? 0);
         }
 
-        if ($this->void) {
+        if ($this->value !== null) {
+            $writer->writeMessage(5, $this->value->encode()); // Value result
+        } elseif ($this->failure !== null) {
+            $writer->writeMessage(6, $this->failure->encode()); // Failure result
+        } elseif ($this->void) {
             $writer->writeMessage(4, ''); // Void result
         }
 

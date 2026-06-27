@@ -83,7 +83,7 @@ final class InvocationProcessor
         } catch (SuspendException) {
             // The suspension message was already written by the state machine.
         } catch (TerminalException $e) {
-            $vm->sysWriteOutputFailure(new Failure($e->statusCode(), $e->getMessage()));
+            $vm->sysWriteOutputFailure(new Failure($e->statusCode(), $e->getMessage(), $e->metadata));
             $vm->sysEnd();
         } catch (RetryableException $e) {
             $this->logger->warning('Invocation attempt failed (retryable): ' . $e->getMessage(), ['exception' => $e]);

@@ -1,0 +1,11 @@
+# Restate runtime with service protocol V7 enabled, for the bidirectional (amp) conformance.
+#
+# This SDK speaks service protocol V7 (signals, signal-backed awakeables, the Future-based
+# SuspensionMessage, AwaitingOnMessage). Restate 1.7.0 supports V7 but it is OPT-IN — by
+# default it negotiates V6, on which the SDK's signal/awakeable model is invalid. The flag
+# below makes the runtime offer V7 so cancellation, awakeables and kill work over bidi.
+#
+# Build:  docker build -f conformance/Dockerfile.restate-v7 -t localhost/restatedev/restate-v7:latest .
+# Use:    --restate-container-image=localhost/restatedev/restate-v7:latest --image-pull-policy=CACHED
+FROM docker.io/restatedev/restate:latest
+ENV RESTATE_EXPERIMENTAL_ENABLE_PROTOCOL_V7=true

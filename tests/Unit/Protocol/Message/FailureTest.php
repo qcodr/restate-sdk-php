@@ -18,20 +18,34 @@ final class FailureTest extends TestCase
         self::assertSame('boom', $failure->message);
     }
 
-    public function testDecodeSkipsTheUnusedMetadataField(): void
+    public function testEncodeDecodeRoundTripsMetadata(): void
     {
-        // The repeated `metadata` field (3) is decode-tolerant but never produced by
-        // this SDK; the decoder must skip it and still read code (1) and message (2).
+        // The repeated `metadata` field (3) carries user error context (V7) and must
+        // survive an encode/decode round trip alongside code (1) and message (2).
+        $failure = new Failure(42, 'oops', ['key1' => 'v1', 'key2' => 'v2']);
+
+        $decoded = Failure::decode($failure->encode());
+
+        self::assertSame(42, $decoded->code);
+        self::assertSame('oops', $decoded->message);
+        self::assertSame(['key1' => 'v1', 'key2' => 'v2'], $decoded->metadata);
+    }
+
+    public function testDecodeToleratesAnUnknownTrailingField(): void
+    {
+        // An unknown field (here field 5) is skipped; code/message still decode and
+        // metadata stays empty.
         $bytes = (new Writer())
             ->writeUint32(1, 42)
             ->writeString(2, 'oops')
-            ->writeBytesPresent(3, 'extra-metadata')
+            ->writeBytesPresent(5, 'future-field')
             ->toString();
 
         $failure = Failure::decode($bytes);
 
         self::assertSame(42, $failure->code);
         self::assertSame('oops', $failure->message);
+        self::assertSame([], $failure->metadata);
     }
 
     public function testDefaultCodeDecodesToZero(): void

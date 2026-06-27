@@ -41,6 +41,21 @@ final class CallOptionsService
     }
 
     /**
+     * Awaits the callee's invocation id (completion 1) and then its result (completion 2)
+     * in sequence, returning the result. Used to prove the streaming driver drains both
+     * awaits when the runtime batches both completions into a single inbound chunk.
+     */
+    #[Handler]
+    public function callAwaitIdThenResult(Context $ctx): string
+    {
+        $handle = $ctx->serviceCallHandle('Target', 'receive', 'payload');
+        $handle->invocationId()->await();
+        $result = $handle->result()->await();
+
+        return \is_string($result) ? $result : '';
+    }
+
+    /**
      * Echoes the request metadata captured from the StartMessage / InputCommand.
      *
      * @return array{headers: array<string, string>, idempotencyKey: ?string}

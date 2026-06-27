@@ -62,14 +62,17 @@ final class StreamingStateMachineTest extends TestCase
         // SuspensionMessage) plus the predicate the driver evaluates before resuming.
         self::assertInstanceOf(ParkSignal::class, $park);
         self::assertFalse(($park->isResolved)(), 'the await is unresolved while the completion is absent');
+        // A single completion await flattens next to the CANCEL signal under a
+        // FirstCompleted node (no nesting), matching the canonical await tree.
         $awaitTree = $park->awaitTree;
+        self::assertSame([$resultId], $awaitTree->waitingCompletions);
         self::assertSame([self::CANCEL_SIGNAL_ID], $awaitTree->waitingSignals);
         self::assertSame(CombinatorType::FirstCompleted, $awaitTree->combinatorType);
-        self::assertCount(1, $awaitTree->nestedFutures);
-        self::assertSame([$resultId], $awaitTree->nestedFutures[0]->waitingCompletions);
+        self::assertSame([], $awaitTree->nestedFutures, 'a single await is flattened, not nested');
 
-        // Only the CallCommand was emitted: no suspension frame is written while parked.
-        self::assertSame([MessageType::CallCommand], $sink->frameTypes());
+        // Parking announces the await tree with an AwaitingOn (so the runtime pushes the
+        // awaited completions/signals on the open stream) but writes NO suspension frame.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $sink->frameTypes());
         self::assertNotContains(MessageType::Suspension, $sink->frameTypes());
 
         // A non-buffering sink has nothing to drain via the legacy takeOutput() path.
@@ -99,8 +102,9 @@ final class StreamingStateMachineTest extends TestCase
         self::assertSame('"hello"', $result->value);
         self::assertSame($resultId, $result->completionId);
 
-        // The park/resume round trip never wrote a suspension frame.
-        self::assertSame([MessageType::CallCommand], $sink->frameTypes());
+        // The park/resume round trip announced the await with an AwaitingOn but never
+        // wrote a suspension frame.
+        self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn], $sink->frameTypes());
     }
 
     public function testCombinatorParksOnFirstCompletedTreeInStreaming(): void
@@ -113,7 +117,7 @@ final class StreamingStateMachineTest extends TestCase
         // is resumed directly (no driver), so a trivial always-true closure suffices.
         $finished = false;
         $fiber = new Fiber(static function () use ($vm, &$finished): void {
-            $vm->suspendAny([2, 4], [], static fn (): bool => true);
+            $vm->suspendAny([2, 4], [], [], static fn (): bool => true);
             $finished = true;
         });
 

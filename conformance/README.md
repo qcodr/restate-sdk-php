@@ -18,11 +18,20 @@ ProxyRequestSigning (Ed25519 request identity) · Combinators (awakeable-or-time
 SleepWithFailures · StopRuntime / KillRuntime (durability across restarts) ·
 UpgradeWithNewInvocation · KafkaIngress · Ingress (header pass-through).
 
-8 tests are excluded with documented reasons in `exclusions.yaml` (cancellation /
-kill of *suspended* invocations, which the Rust SDK passes over the bidirectional
-transport this SDK does not implement — see `../docs/adr/0001-request-response-transport.md`;
-`awaitAny` combinator edge cases the Rust SDK also excludes; per-handler raw serde;
-one fan-out ordering case; in-flight deployment upgrade).
+A few tests are excluded with documented reasons in `exclusions.yaml` (`awaitAny`
+combinator edge cases the Rust SDK also excludes; per-handler raw serde; one fan-out
+ordering case; in-flight deployment upgrade; V7 scoped concurrency).
+
+### Bidirectional (amp) transport on service protocol V7
+
+The `AmpStreamingServer` transport speaks service protocol **V7** (signals, signal-backed
+awakeables, named signals, the Future-based suspension/`AwaitingOn`). Against a V7-enabled
+runtime (`Dockerfile.restate-v7`) the `default` suite passes **48 / 49**, including
+`Cancellation` 6/6, `KillInvocation` 1/1, `Signals` 2/2, `Combinators` 9/9,
+`RunRetry` 3/3, `UserErrors` 10/10, and `ServiceToServiceCommunication` 5/5. The remaining
+exclusions are the same documented gaps as above plus `ServiceToServiceScopeConcurrency`
+(V7 scoped concurrency / virtual queues — not yet implemented). See the run instructions
+below and `../docs/adr/0001-cancellation-over-bidirectional-streaming.md`.
 
 ## Run it
 
@@ -42,6 +51,25 @@ java -jar build/restate-sdk-test-suite.jar run \
 `--sequential` is used because parallel container startup makes the runtime's h2c
 discovery handshake flaky on a single host. The PHP server speaks HTTP/2 cleartext
 (h2c), which the runtime uses for discovery + invocation.
+
+### Bidirectional (HTTP/2) streaming + service protocol V7
+
+The `AmpStreamingServer` transport (`conformance/Dockerfile.amp` →
+`localhost/restatedev/php-amp-test-services`) serves true bidi h2c and speaks service
+protocol **V7** (signals, signal-backed awakeables, `AwaitingOnMessage`). Restate 1.7.0
+supports V7 but negotiates V6 by default, so build a V7-enabled runtime image first:
+
+```bash
+docker build -f conformance/Dockerfile.restate-v7 -t localhost/restatedev/restate-v7:latest .
+docker build -f conformance/Dockerfile.amp -t localhost/restatedev/php-amp-test-services:latest .
+
+java -jar build/sdk-tests.jar run \
+  --restate-container-image=localhost/restatedev/restate-v7:latest \
+  --service-container-image=localhost/restatedev/php-amp-test-services:latest \
+  --test-suite=default --test-name=Cancellation \
+  --exclusions-file=conformance/exclusions.yaml \
+  --image-pull-policy=CACHED --report-dir=build/conformance-amp-report --sequential
+```
 
 After a run, `build/conformance-report/<ts>/exclusions.new.yaml` lists everything that
 failed/was skipped — copy entries into `exclusions.yaml` to baseline new gaps.

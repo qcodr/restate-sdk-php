@@ -40,6 +40,11 @@ final class Future
         return new self(waitingSignals: [$signalId]);
     }
 
+    public static function forNamedSignal(string $name): self
+    {
+        return new self(waitingNamedSignals: [$name]);
+    }
+
     public function encode(): string
     {
         $writer = new Writer();

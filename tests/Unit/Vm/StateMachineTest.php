@@ -457,12 +457,12 @@ final class StateMachineTest extends TestCase
         self::assertSame(4, $field);
         $outer = $this->decodeFuture($reader->readLengthDelimited());
 
-        // The outer node waits on the built-in CANCEL signal (idx 1) so a cancel wakes it...
+        // A single awaited completion flattens next to the built-in CANCEL signal (idx 1)
+        // under a FirstCompleted node — matching the canonical await-tree the runtime keys
+        // its cancel wake-up off — rather than nesting the completion below the guard.
+        self::assertSame([$completionId], $outer['completions'], 'the awaited completion sits on the cancel-guarded node');
         self::assertSame([1], $outer['signals'], 'the suspension also waits on the CANCEL signal');
-        // ...and nests the actual awaited completion.
-        self::assertCount(1, $outer['nested'], 'the real await point is nested under the cancel guard');
-        $inner = $this->decodeFuture($outer['nested'][0]);
-        self::assertSame([$completionId], $inner['completions']);
+        self::assertSame([], $outer['nested'], 'a single await is flattened, not nested');
     }
 
     /**
