@@ -29,21 +29,30 @@ final class Failing
     private int $eventualSuccessSideEffects = 0;
     private int $eventualFailureSideEffects = 0;
 
+    /**
+     * @param array{errorMessage?: string, metadata?: array<string, string>} $failureToPropagate
+     */
     #[Handler]
-    public function terminallyFailingCall(ObjectContext $ctx, string $errorMessage): void
+    public function terminallyFailingCall(ObjectContext $ctx, array $failureToPropagate): void
     {
-        throw new TerminalException($errorMessage);
+        throw new TerminalException(
+            (string) ($failureToPropagate['errorMessage'] ?? ''),
+            metadata: $failureToPropagate['metadata'] ?? [],
+        );
     }
 
+    /**
+     * @param array{errorMessage?: string, metadata?: array<string, string>} $failureToPropagate
+     */
     #[Handler]
-    public function callTerminallyFailingCall(ObjectContext $ctx, string $errorMessage): string
+    public function callTerminallyFailingCall(ObjectContext $ctx, array $failureToPropagate): string
     {
         $uuid = $ctx->random()->uuidV4();
 
-        // The callee fails terminally; awaiting the call rethrows that terminal
-        // failure here, so it propagates to our caller and the line below is never
-        // reached (mirrors the Rust `unreachable!`).
-        $ctx->objectCall('Failing', $uuid, 'terminallyFailingCall', $errorMessage);
+        // The callee fails terminally; awaiting the call rethrows that terminal failure
+        // here (metadata included), so it propagates to our caller and the line below is
+        // never reached (mirrors the Rust `unreachable!`).
+        $ctx->objectCall('Failing', $uuid, 'terminallyFailingCall', $failureToPropagate);
 
         throw new TerminalException('This should be unreachable');
     }
@@ -64,13 +73,19 @@ final class Failing
         throw new RuntimeException('Failed at attempt ${current_attempt}');
     }
 
+    /**
+     * @param array{errorMessage?: string, metadata?: array<string, string>} $failureToPropagate
+     */
     #[Handler]
-    public function terminallyFailingSideEffect(ObjectContext $ctx, string $errorMessage): void
+    public function terminallyFailingSideEffect(ObjectContext $ctx, array $failureToPropagate): void
     {
+        $errorMessage = (string) ($failureToPropagate['errorMessage'] ?? '');
+        $metadata = $failureToPropagate['metadata'] ?? [];
+
         // A terminal failure raised inside a run is not retried: it is journaled and
         // propagates out of the handler.
-        $ctx->run('sideEffect', static function () use ($errorMessage): void {
-            throw new TerminalException($errorMessage);
+        $ctx->run('sideEffect', static function () use ($errorMessage, $metadata): void {
+            throw new TerminalException($errorMessage, metadata: $metadata);
         });
     }
 

@@ -27,6 +27,7 @@ use Qcodr\Restate\Sdk\Protocol\Message\GetPromiseCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Header;
 use Qcodr\Restate\Sdk\Protocol\Message\InputCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Notification;
+use Qcodr\Restate\Sdk\Protocol\Message\NotificationResult;
 use Qcodr\Restate\Sdk\Protocol\Message\OneWayCallCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\OutgoingMessage;
 use Qcodr\Restate\Sdk\Protocol\Message\OutputCommand;
@@ -92,6 +93,15 @@ final class StateMachine
      * @var list<int>
      */
     private array $trackedInvocationIdCompletions = [];
+    /**
+     * Proposed `ctx.run` results awaiting the runtime's `ProposeRunCompletionAck`, keyed by
+     * completion id. Over streaming the runtime confirms a proposal with a lightweight ack
+     * (a control frame, processing-phase only) rather than echoing the value, so the result
+     * is stashed here at propose time and promoted into the completion table on the ack.
+     *
+     * @var array<int, Notification>
+     */
+    private array $pendingRunResults = [];
 
     private VmState $state = VmState::WaitingPreFlight;
 
@@ -227,11 +237,27 @@ final class StateMachine
                     $this->completions,
                     $this->signals,
                 );
+            } elseif ($type === MessageType::ProposeRunCompletionAck) {
+                // The runtime confirmed a proposed run; resolve it from the stashed value.
+                $this->resolveProposedRun(Notification::decode($frame->payload)->completionId);
             }
         }
 
         if ($offset > 0) {
             $this->inputBuffer = \substr($this->inputBuffer, $offset);
+        }
+    }
+
+    /**
+     * Promotes a proposed `ctx.run` result into the completion table once the runtime acks
+     * it. The ack frame carries only the completion id (field 1); the value/failure was
+     * stashed at propose time, so this wakes the parked run with the result it proposed.
+     */
+    private function resolveProposedRun(?int $completionId): void
+    {
+        if ($completionId !== null && isset($this->pendingRunResults[$completionId])) {
+            $this->completions[$completionId] = $this->pendingRunResults[$completionId];
+            unset($this->pendingRunResults[$completionId]);
         }
     }
 
@@ -510,11 +536,31 @@ final class StateMachine
     public function proposeRunCompletionSuccess(int $completionId, string $value): void
     {
         $this->appendOutput(ProposeRunCompletion::success($completionId, $value));
+        $this->pendingRunResults[$completionId] = new Notification(
+            $completionId,
+            null,
+            null,
+            NotificationResult::Value,
+            $value,
+            null,
+            null,
+            null,
+        );
     }
 
     public function proposeRunCompletionFailure(int $completionId, Failure $failure): void
     {
         $this->appendOutput(ProposeRunCompletion::failure($completionId, $failure));
+        $this->pendingRunResults[$completionId] = new Notification(
+            $completionId,
+            null,
+            null,
+            NotificationResult::Failure,
+            null,
+            $failure,
+            null,
+            null,
+        );
     }
 
     /**

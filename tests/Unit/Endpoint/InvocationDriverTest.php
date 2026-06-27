@@ -178,7 +178,7 @@ final class InvocationDriverTest extends TestCase
         self::assertSame('cancelled', $failure->message);
     }
 
-    public function testRunWithAckResolvesOnRunCompletion(): void
+    public function testRunResolvesFromProposeRunCompletionAck(): void
     {
         $service = new RunService();
         $endpoint = Endpoint::builder()->bind($service)->build();
@@ -189,9 +189,10 @@ final class InvocationDriverTest extends TestCase
 
         $transport = new BufferedStreamTransport([
             (new JournalBuilder())->input('')->build(),
-            // The ack control frame is read and ignored; the value arrives separately.
+            // Over streaming the runtime confirms a proposed run with only this ack control
+            // frame (processing phase) — it does NOT echo a RunCompletion notification. The
+            // SDK resolves the parked run from the value it proposed.
             (new JournalBuilder())->proposeRunCompletionAck(1)->frames(),
-            (new JournalBuilder())->runCompletion(1, '"effect-result"')->frames(),
         ]);
         $vm = new StateMachine(ServiceProtocolVersion::V7, new FiberSuspender(), new StreamingOutputSink($transport));
 

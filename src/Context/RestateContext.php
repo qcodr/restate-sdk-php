@@ -95,7 +95,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         try {
             $result = $action();
         } catch (TerminalException $e) {
-            $this->vm->proposeRunCompletionFailure($completionId, new Failure($e->statusCode(), $e->getMessage()));
+            $this->vm->proposeRunCompletionFailure($completionId, new Failure($e->statusCode(), $e->getMessage(), $e->metadata));
 
             // In request/response, awaiting the just-proposed (not-yet-replayed)
             // completion writes the suspension and unwinds; in streaming it parks until

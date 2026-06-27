@@ -64,10 +64,28 @@ final class VirtualObjectCommandInterpreter
                     break;
 
                 case 'awaitAnySuccessful':
+                case 'awaitFirstSucceededOrAllFailed':
                     // First awaitable to SUCCEED wins.
                     $lastResult = self::asString(
                         $ctx->awaitAny(...$this->awaitableFutures($ctx, $command['commands'])),
                     );
+                    break;
+
+                case 'awaitFirstCompleted':
+                    // First awaitable to COMPLETE (success or failure) wins — like awaitAny.
+                    [, $firstValue] = $ctx->select(...$this->awaitableFutures($ctx, $command['commands']));
+                    $lastResult = self::asString($firstValue);
+                    break;
+
+                case 'awaitAllCompleted':
+                    // Settle EVERY awaitable, rendering each `ok:<value>` / `err:<reason>`.
+                    $lastResult = $this->awaitAllCompleted($ctx, $command['commands']);
+                    break;
+
+                case 'awaitAllSucceededOrFirstFailed':
+                    // All must succeed (values joined); the first failure short-circuits.
+                    $values = $ctx->awaitAllSucceeded($this->awaitableFutures($ctx, $command['commands']));
+                    $lastResult = \implode('|', \array_map([self::class, 'asString'], $values));
                     break;
 
                 case 'awaitAwakeableOrTimeout':
@@ -198,6 +216,43 @@ final class VirtualObjectCommandInterpreter
             default:
                 throw new TerminalException("Unknown awaitable command type: {$type}");
         }
+    }
+
+    /**
+     * Settles every awaitable (success or failure) and renders each as `ok:<value>` or
+     * `err:<reason>`, joined with `|`. All futures are started up front, then awaited in
+     * turn (they run concurrently, so this waits for the slowest, not the sum).
+     *
+     * @param list<array<string, mixed>> $commands
+     */
+    private function awaitAllCompleted(ObjectContext $ctx, array $commands): string
+    {
+        $pairs = [];
+        foreach ($commands as $command) {
+            $pairs[] = [$command, $this->awaitableCommandFuture($ctx, $command)];
+        }
+
+        $parts = [];
+        foreach ($pairs as [$command, $future]) {
+            try {
+                $parts[] = 'ok:' . $this->renderAwaitableValue($command, $future->await());
+            } catch (TerminalException $e) {
+                $parts[] = 'err:' . $e->getMessage();
+            }
+        }
+
+        return \implode('|', $parts);
+    }
+
+    /**
+     * Renders a settled awaitable's value: a bare durable timer resolves to null, so a
+     * `sleep` command is rendered by its name rather than the empty value.
+     *
+     * @param array<string, mixed> $command
+     */
+    private function renderAwaitableValue(array $command, mixed $value): string
+    {
+        return ($command['type'] ?? '') === 'sleep' ? 'sleep' : self::asString($value);
     }
 
     /**

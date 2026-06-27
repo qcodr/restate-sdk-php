@@ -18,8 +18,16 @@ class TerminalException extends RuntimeException
 {
     public const DEFAULT_CODE = 500;
 
-    public function __construct(string $message, int $code = self::DEFAULT_CODE, ?Throwable $previous = null)
-    {
+    /**
+     * @param array<string, string> $metadata user error metadata propagated with the
+     *                                         failure (service protocol V7)
+     */
+    public function __construct(
+        string $message,
+        int $code = self::DEFAULT_CODE,
+        ?Throwable $previous = null,
+        public readonly array $metadata = [],
+    ) {
         parent::__construct($message, $code, $previous);
     }
 

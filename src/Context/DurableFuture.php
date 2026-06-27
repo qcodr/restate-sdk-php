@@ -95,6 +95,7 @@ final class DurableFuture
             NotificationResult::Failure => throw new TerminalException(
                 $notification->failure->message ?? 'terminal failure',
                 $notification->failure->code ?? TerminalException::DEFAULT_CODE,
+                metadata: $notification->failure->metadata ?? [],
             ),
             NotificationResult::Value => $this->decoder !== null
                 ? ($this->decoder)($notification->value ?? '')
