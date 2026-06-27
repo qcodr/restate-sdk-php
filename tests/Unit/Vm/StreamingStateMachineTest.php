@@ -62,11 +62,13 @@ final class StreamingStateMachineTest extends TestCase
         // SuspensionMessage) plus the predicate the driver evaluates before resuming.
         self::assertInstanceOf(ParkSignal::class, $park);
         self::assertFalse(($park->isResolved)(), 'the await is unresolved while the completion is absent');
+        // A single completion await flattens next to the CANCEL signal under a
+        // FirstCompleted node (no nesting), matching the canonical await tree.
         $awaitTree = $park->awaitTree;
+        self::assertSame([$resultId], $awaitTree->waitingCompletions);
         self::assertSame([self::CANCEL_SIGNAL_ID], $awaitTree->waitingSignals);
         self::assertSame(CombinatorType::FirstCompleted, $awaitTree->combinatorType);
-        self::assertCount(1, $awaitTree->nestedFutures);
-        self::assertSame([$resultId], $awaitTree->nestedFutures[0]->waitingCompletions);
+        self::assertSame([], $awaitTree->nestedFutures, 'a single await is flattened, not nested');
 
         // Parking announces the await tree with an AwaitingOn (so the runtime pushes the
         // awaited completions/signals on the open stream) but writes NO suspension frame.

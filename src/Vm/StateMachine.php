@@ -84,6 +84,14 @@ final class StateMachine
     private array $completions = [];
     /** @var array<int, Notification> signals keyed by signal index */
     private array $signals = [];
+    /**
+     * Invocation-id completion ids of the calls this handler has issued, in order. On
+     * cancellation they are used to propagate the cancel to those child invocations
+     * (implicit cancellation), so a cancelled parent tears down the calls it spawned.
+     *
+     * @var list<int>
+     */
+    private array $trackedInvocationIdCompletions = [];
 
     private VmState $state = VmState::WaitingPreFlight;
 
@@ -114,6 +122,18 @@ final class StateMachine
     public function protocolVersion(): ServiceProtocolVersion
     {
         return $this->version;
+    }
+
+    /**
+     * Per-invocation tag for the RESTATE_STREAM_DEBUG wire trace: the StateMachine object
+     * id (unique per invocation in the process) plus the trailing bytes of the runtime
+     * invocation id (Restate ids share a leading prefix, so only the suffix distinguishes).
+     */
+    public function debugInvocationId(): string
+    {
+        $inv = $this->start !== null ? \substr(\bin2hex($this->start->id), -12) : '?';
+
+        return \spl_object_id($this) . ':' . $inv;
     }
 
     // --- Input bootstrapping ---
@@ -418,6 +438,8 @@ final class StateMachine
             $idempotencyKey,
             $headers,
         ));
+        // Remember the callee so a cancel of this handler propagates to it.
+        $this->trackedInvocationIdCompletions[] = $invocationIdCompletionId;
 
         return [$invocationIdCompletionId, $resultCompletionId];
     }
@@ -569,6 +591,26 @@ final class StateMachine
         return isset($this->signals[self::CANCEL_SIGNAL_ID]);
     }
 
+    /**
+     * Fails the current await with {@see CancelledException}, first propagating the cancel
+     * to the calls this handler issued (implicit cancellation): every tracked callee whose
+     * invocation id is already known is sent the built-in CANCEL signal, so a cancelled
+     * parent tears down the children it is blocked on rather than leaking them. Mirrors the
+     * cancellation branch of sdk-shared-core's `do_await`.
+     */
+    public function raiseCancellation(): never
+    {
+        foreach ($this->trackedInvocationIdCompletions as $completionId) {
+            $invocationId = ($this->completions[$completionId] ?? null)?->invocationId;
+            if ($invocationId !== null) {
+                $this->recordCommand(SendSignalCommand::cancel($invocationId));
+            }
+        }
+        $this->trackedInvocationIdCompletions = [];
+
+        throw new CancelledException();
+    }
+
     /** Returns the completion if ready, otherwise parks (or fails if cancelled). */
     public function awaitCompletion(int $completionId): Notification
     {
@@ -576,7 +618,7 @@ final class StateMachine
             return $this->completions[$completionId];
         }
         if ($this->isCancelled()) {
-            throw new CancelledException();
+            $this->raiseCancellation();
         }
 
         // Request/response parks by throwing (the lines below are unreachable there);
@@ -588,7 +630,7 @@ final class StateMachine
         );
 
         if ($this->isCancelled()) {
-            throw new CancelledException(); // cancel won the race
+            $this->raiseCancellation(); // cancel won the race
         }
 
         return $this->peekCompletion($completionId); // the driver guarantees its presence
@@ -605,7 +647,7 @@ final class StateMachine
             return $this->signals[$signalId];
         }
         if ($this->isCancelled()) {
-            throw new CancelledException();
+            $this->raiseCancellation();
         }
 
         $this->parkOn(
@@ -614,7 +656,7 @@ final class StateMachine
         );
 
         if ($this->isCancelled()) {
-            throw new CancelledException(); // cancel won the race
+            $this->raiseCancellation(); // cancel won the race
         }
 
         return $this->peekSignal($signalId); // the driver guarantees its presence
@@ -703,12 +745,32 @@ final class StateMachine
      */
     private function parkOn(Future $inner, Closure $isResolved): void
     {
-        $awaitOn = new Future(
+        $this->suspender->park($this, $this->guardWithCancel($inner), $isResolved);
+    }
+
+    /**
+     * Wraps an awaited future as `FirstCompleted([inner, CANCEL signal])` so the runtime
+     * wakes a suspended invocation when it is cancelled. Matching the canonical encoding
+     * matters: a single-leaf await (one completion or signal, no combinator) flattens its
+     * ids up next to the CANCEL signal — the runtime keys its cancel wake-up off that flat
+     * shape — while a real combinator stays nested under the guard.
+     */
+    private function guardWithCancel(Future $inner): Future
+    {
+        if ($inner->combinatorType === CombinatorType::Unknown && $inner->nestedFutures === []) {
+            return new Future(
+                waitingCompletions: $inner->waitingCompletions,
+                waitingSignals: [...$inner->waitingSignals, self::CANCEL_SIGNAL_ID],
+                waitingNamedSignals: $inner->waitingNamedSignals,
+                combinatorType: CombinatorType::FirstCompleted,
+            );
+        }
+
+        return new Future(
             waitingSignals: [self::CANCEL_SIGNAL_ID],
             nestedFutures: [$inner],
             combinatorType: CombinatorType::FirstCompleted,
         );
-        $this->suspender->park($this, $awaitOn, $isResolved);
     }
 
     /**
@@ -824,6 +886,9 @@ final class StateMachine
 
     private function appendOutput(OutgoingMessage $message): void
     {
+        if (\getenv('RESTATE_STREAM_DEBUG') !== false) {
+            \fwrite(\STDERR, \sprintf("[vm %s] write %s\n", $this->debugInvocationId(), $message->messageType()->name));
+        }
         $this->sink->write(MessageCodec::encode($message));
     }
 

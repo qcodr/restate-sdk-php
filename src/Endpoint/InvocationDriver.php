@@ -171,7 +171,8 @@ final class InvocationDriver
 
         $resolved = $park instanceof ParkSignal ? (($park->isResolved)() ? 'Y' : 'N') : '-';
         \fwrite(\STDERR, \sprintf(
-            "[stream] %-12s cancelled=%s parkResolved=%s\n",
+            "[stream %s] %-12s cancelled=%s parkResolved=%s\n",
+            $vm->debugInvocationId(),
             $event,
             $vm->isCancelled() ? 'Y' : 'N',
             $resolved,

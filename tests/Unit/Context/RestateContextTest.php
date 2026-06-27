@@ -675,10 +675,12 @@ final class RestateContextTest extends TestCase
         }
 
         // An awakeable is completed via a signal, so the await tree must wait on a
-        // signal id, never a completion id.
-        $inner = self::innerAwaitTree($this->frames($vm));
-        self::assertSame([], $inner['completions']);
-        self::assertNotSame([], $inner['signals']);
+        // signal id, never a completion id. A single-signal await flattens next to the
+        // CANCEL signal, so the signals live on the outer (cancel-guarded) node.
+        $outer = self::outerAwaitTree($this->frames($vm));
+        self::assertSame([], $outer['completions']);
+        self::assertNotSame([], $outer['signals']);
+        self::assertSame([], $outer['nested'], 'a single await flattens rather than nesting');
     }
 
     public function testResolveAndRejectAwakeableEmitCompletionCommands(): void
@@ -1049,14 +1051,24 @@ final class RestateContextTest extends TestCase
      */
     private static function innerAwaitTree(array $frames): array
     {
+        $outer = self::outerAwaitTree($frames);
+        self::assertCount(1, $outer['nested']);
+
+        return self::decodeFuture($outer['nested'][0]);
+    }
+
+    /**
+     * @param list<\Qcodr\Restate\Sdk\Protocol\Frame> $frames
+     *
+     * @return array{completions: list<int>, signals: list<int>, nested: list<string>}
+     */
+    private static function outerAwaitTree(array $frames): array
+    {
         $suspension = self::frameOfType($frames, MessageType::Suspension);
         $outerBytes = self::fields($suspension->payload)[4];
         self::assertIsString($outerBytes);
 
-        $outer = self::decodeFuture($outerBytes);
-        self::assertCount(1, $outer['nested']);
-
-        return self::decodeFuture($outer['nested'][0]);
+        return self::decodeFuture($outerBytes);
     }
 
     /**

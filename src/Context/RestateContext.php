@@ -7,7 +7,6 @@ namespace Qcodr\Restate\Sdk\Context;
 use InvalidArgumentException;
 use LogicException;
 use Psr\Log\LoggerInterface;
-use Qcodr\Restate\Sdk\Error\CancelledException;
 use Qcodr\Restate\Sdk\Error\TerminalException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
@@ -317,7 +316,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         // (re-)suspend: in request/response this is the re-invocation carrying the CANCEL
         // signal in the replayed journal, where suspending again would loop forever.
         if ($this->vm->isCancelled()) {
-            throw new CancelledException();
+            $this->vm->raiseCancellation();
         }
 
         // request/response unwinds inside suspendAny(); streaming parks until the
@@ -337,7 +336,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         }
 
         if ($this->vm->isCancelled()) {
-            throw new CancelledException();
+            $this->vm->raiseCancellation();
         }
 
         throw new LogicException('select resumed without a ready future');
@@ -349,7 +348,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         if ($unresolved !== []) {
             // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
 
             // Request/response unwinds inside suspendAll(); streaming parks until every
@@ -364,7 +363,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
 
         if (!self::allReady($futures)) {
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
 
             throw new LogicException('awaitAll resumed without every future ready');
@@ -383,7 +382,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         if (!self::anySucceededOrAllReady($futures)) {
             // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
 
             // Request/response unwinds inside suspendAnySucceeded(); streaming parks until
@@ -394,7 +393,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
             // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
         }
 
@@ -426,7 +425,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         if (!self::anyFailedOrAllSucceeded($futures)) {
             // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
 
             // Request/response unwinds inside suspendAllSucceeded(); streaming parks until
@@ -437,7 +436,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
             // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
         }
 
@@ -450,7 +449,7 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
 
         if (!self::allReady($futures)) {
             if ($this->vm->isCancelled()) {
-                throw new CancelledException();
+                $this->vm->raiseCancellation();
             }
 
             throw new LogicException('awaitAllSucceeded resumed without resolution');

@@ -228,9 +228,9 @@ final class InvocationDriverTest extends TestCase
         self::assertSame('"Greetings world"', $this->successValue($output));
         self::assertTrue($transport->isClosed());
 
-        // The handler never parked: only the single journal read happened (read #0),
-        // so the resume loop body never ran.
-        self::assertSame('', $transport->outputAtRead(1), 'no second read occurred — the loop body never ran');
+        // The handler never parked — it emitted no AwaitingOn — so the one-shot Output/End
+        // ran straight through without yielding to the streaming loop.
+        self::assertNotContains(MessageType::AwaitingOn, $this->frameTypes($output), 'a non-awaiting handler never parks');
     }
 
     public function testEofWhileParkedSuspendsGracefully(): void
@@ -359,8 +359,12 @@ final class InvocationDriverTest extends TestCase
         self::assertSame([MessageType::CallCommand, MessageType::AwaitingOn, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
         self::assertSame('"call-result"', $this->successValue($output));
-        // Both completions rode in read #1; no read past that batch occurred.
-        self::assertSame('', $transport->outputAtRead(2), 'the batched chunk resolved both awaits — no further read');
+        // Only the CallCommand + the park's AwaitingOn were out at read #1, which carried
+        // both completions: the handler drove both awaits off that single notification chunk.
+        self::assertSame(
+            [MessageType::CallCommand, MessageType::AwaitingOn],
+            $this->frameTypes($transport->outputAtRead(1)),
+        );
     }
 
     public function testAwakeableSignalOnOpenStreamResolvesParkedAwait(): void
@@ -412,11 +416,12 @@ final class InvocationDriverTest extends TestCase
         self::assertSame(4, $field, 'the suspension carries its await tree in field 4');
         $outer = $this->decodeFuture($reader->readLengthDelimited());
 
-        self::assertSame([1], $outer['signals'], 'the outer node waits on the CANCEL signal');
-        self::assertCount(1, $outer['nested'], 'the awakeable await nests under the cancel guard');
-        $inner = $this->decodeFuture($outer['nested'][0]);
-        self::assertSame([17], $inner['signals'], 'the nested node waits on the awakeable signal idx 17');
-        self::assertSame([], $inner['completions']);
+        // A single-signal await flattens: the awakeable signal (idx 17) and the CANCEL
+        // signal (idx 1) sit together on the FirstCompleted node, with nothing nested —
+        // the flat shape the runtime keys its cancel wake-up off.
+        self::assertSame([17, 1], $outer['signals'], 'the await waits on the awakeable signal and the CANCEL signal');
+        self::assertSame([], $outer['completions']);
+        self::assertSame([], $outer['nested'], 'a single await is flattened, not nested');
     }
 
     private function frameOfType(string $output, MessageType $type): Frame
