@@ -1,5 +1,8 @@
-# Restate PHP SDK deployment image: PHP 8.x + ext-swoole, serving the example
-# services on port 9080 for the Restate runtime to discover and invoke.
+# Restate PHP SDK Swoole image: PHP 8.x + ext-swoole, serving over request/response
+# on port 9080. This is the ALTERNATIVE transport — the default deployment image is the
+# amphp bidirectional-streaming one at docker/php-amp/Dockerfile. Kept here because the
+# Swoole e2e benchmark (benchmarks/e2e, TRANSPORT=swoole) measures this request/response
+# path against the amphp one.
 FROM phpswoole/swoole:latest
 
 WORKDIR /app
@@ -12,8 +15,9 @@ RUN composer install --no-dev --no-interaction --no-progress --optimize-autoload
 
 COPY src ./src
 COPY examples ./examples
+COPY benchmarks ./benchmarks
 RUN composer dump-autoload --no-dev --optimize
 
 EXPOSE 9080
 
-CMD ["php", "examples/endpoint.php"]
+CMD ["php", "benchmarks/e2e/bench-endpoint.php"]

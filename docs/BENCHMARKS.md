@@ -5,7 +5,7 @@ Performance is measured at two levels, each with a different purpose:
 | Layer | What it measures | Reproducible where | Use |
 |-------|------------------|--------------------|-----|
 | **Micro** (`benchmarks/micro.php`) | CPU + memory of the SDK hot path (protocol codec, journal/replay state machine, typed context + serde) — **no I/O** | Any PHP host, CI | Regression gate; isolates SDK cost from network/runtime |
-| **End-to-end** (`benchmarks/e2e/run.sh`) | Real request path: load generator → Restate ingress → runtime → PHP Swoole endpoint → response. Latency, throughput, worker memory | Any host with Docker | Realistic latency/throughput + leak detection under sustained load |
+| **End-to-end** (`benchmarks/e2e/run.sh`) | Real request path: load generator → Restate ingress → runtime → PHP endpoint → response, over Swoole (r/r) *or* amphp (bidi). Latency, throughput, endpoint memory | Any host with Docker | Realistic latency/throughput + leak detection under sustained load + transport comparison |
 
 The micro layer is the authoritative number for *SDK overhead* and for catching
 regressions, because it is deterministic and dependency-free. The end-to-end layer
@@ -27,18 +27,20 @@ make bench
 # or, tuning the loop and emitting JSON:
 BENCH_ITER=100000 BENCH_WARMUP=10000 BENCH_JSON=1 php benchmarks/micro.php
 
-# End-to-end (brings up Restate 1.5.2 + the Swoole endpoint via docker compose,
-# drives it with a containerized `oha`, samples worker RSS with `docker stats`)
-make bench-e2e
+# End-to-end (brings up Restate 1.5.2 + a PHP endpoint via docker compose, drives it
+# with a containerized `oha`, samples endpoint RSS with `docker stats`)
+make bench-e2e                          # Swoole request/response (default)
+make bench-e2e-amp                      # amphp bidi HTTP/2
+make bench-e2e-compare                  # both, side by side, one runtime
 # or, tuning the load:
-DURATION=30s MEM_DURATION=360s CONNECTIONS=100 benchmarks/e2e/run.sh
+TRANSPORT=amp DURATION=30s MEM_DURATION=360s CONNECTIONS=100 benchmarks/e2e/run.sh
 KEEP_UP=1 benchmarks/e2e/run.sh        # leave the stack up for inspection
 ```
 
 The only external tool the end-to-end harness needs is Docker; the load generator
 ([`oha`](https://github.com/hatoo/oha)) runs as a container (`ghcr.io/hatoo/oha`),
 so nothing is installed on the host. Raw results are written to
-`build/benchmarks/` (`e2e-oha.json`, `e2e-mem.csv`).
+`build/benchmarks/` (`e2e-oha-<transport>.json`, `e2e-mem-<transport>.csv`).
 
 ---
 
@@ -111,6 +113,80 @@ Interpretation: end-to-end latency (~29 ms p50) is dominated by the Restate runt
 round-trip and journal persistence, not the SDK (~0.05 ms of which is SDK CPU per
 the micro-benchmark). Throughput here is bounded by this old CPU and a single Swoole
 worker config; scale with `worker_num` and faster hardware.
+
+### Transport comparison: Swoole (r/r) vs amphp (bidi)
+
+`make bench-e2e-compare` runs the identical `BenchGreeter/greet` over both transports
+against one runtime, head to head. On a **16-core AVX2 host, Restate 1.5.2, 50
+connections, 20 s** (numbers are relative — the absolute rate is host-dependent):
+
+| Transport | req/s | p50 | p90 | p99 | peak RSS |
+|-----------|------:|----:|----:|----:|---------:|
+| Swoole r/r — 16 workers (default) | 970 | 47 ms | 74 ms | 136 ms | 39 MB |
+| Swoole r/r — 1 worker (`WORKER_NUM=1`) | 1,228 | 38 ms | 57 ms | 94 ms | — |
+| amphp bidi — before TCP_NODELAY | 495 | 89 ms | 170 ms | 274 ms | 44 MB |
+| **amphp bidi — 1 process** | **660** | 63 ms | 135 ms | 250 ms | 44 MB |
+
+Two findings:
+
+- **The workload is runtime-bound, not endpoint-bound.** Swoole with *one* worker
+  (1,228 req/s) beats Swoole with sixteen (970): more workers do not help, because the
+  limiter is the Restate runtime's single-partition journaling, not PHP (same
+  conclusion as the worker_num sweep below).
+- **At one process, a zero-suspension handler costs ~1.8× per request on bidi.** At equal
+  concurrency and one process (`-c 50`, 1 worker) Swoole does ~1,200 req/s, bidi ~660: pure
+  transport overhead, since the bidi streaming driver (fiber park/resume, a held-open HTTP/2
+  stream, the frame queue) does strictly more work per call than Swoole's request/response.
+  A trivial greeter is bidi's *worst* case — it never suspends, so none of bidi's advantage
+  applies. (This per-request gap is closed by running multiple workers — see below.)
+
+> **Optimizing the bidi transport.** Three layered wins, each measured:
+>
+> 1. **`TCP_NODELAY`** — amphp's `BindContext` leaves it off, so a slice that writes a
+>    couple of small frames (Output then End) and then waits to read hit Nagle ↔
+>    delayed-ACK for a ~40 ms per-invocation stall. Enabling it on the server socket (plus
+>    coalescing each slice's frames into one write in `AmpStreamTransport`) lifted the
+>    greeter from **495 → ~660 req/s (+35%)**, p50 89 → 63 ms.
+> 2. **Inline fast-path** — the original `stream()` spawned an `async()` task + an outbound
+>    `Queue` + `ReadableIterableStream` for *every* invocation: ~17.7 µs to create the
+>    extra Fiber, ~3.4 µs for the queue, and 2–3 event-loop hops per call (a micro-benchmark
+>    put `ReadableBuffer::read` at 465 ns vs 3,416 ns for the queue path — 7.3×). A handler
+>    that does not park now runs entirely in the request fiber and returns its whole output
+>    as one `ReadableBuffer` — no async, no queue, zero extra hops; only a *parked* handler
+>    falls back to the streaming queue (`SwitchableOutputSink` buffers inline, then forwards
+>    to the transport on the first park). Worth **+15–22%** more single-worker throughput
+>    and a notably tighter tail under load.
+> 3. **Multi-worker** — see below; it removes the single-event-loop ceiling entirely.
+
+#### Multi-worker bidi (lifting the single-event-loop ceiling)
+
+One amphp process is one event loop — a single-core ceiling. At `-c 50` it serves ~520
+req/s; pushing concurrency only grows latency until it **collapses** (`-c 400` → 123 req/s,
+p50 734 ms) as a single HTTP/2 connection / loop saturates. `AmpStreamingServer::listen()`
+takes a **`$workers`** count: it pre-forks N processes that each bind the port with
+`SO_REUSEPORT`, so the kernel load-balances connections across N event loops — the amphp
+equivalent of Swoole's worker pool. Same host, Restate 1.5.2, `BenchGreeter/greet`:
+
+| workers | `-c 50` | `-c 200` | `-c 400` |
+|--------:|--------:|---------:|---------:|
+| 1 | 522 | 693 | 123 💥 |
+| 8 | 743 | 1,421 | 1,364 |
+| 16 | 805 | **1,470** | **1,709** |
+
+With 8–16 workers the bidi transport **matches and overtakes** single-worker Swoole
+(~1,228) — 1,470 req/s at `-c 200`, 1,709 at `-c 400`, 100 % success, and the collapse is
+gone. Beyond that the limiter is the Restate runtime again, not the SDK. So the structural
+per-request overhead is a *single-process* property; throughput parity is a `WORKER_NUM`
+away (`bench-endpoint-amp.php` reads it; production sets `listen(..., workers: N)`).
+
+When bidi pays off is the opposite workload — handlers that **suspend** (sleep, durable
+calls, awakeables, `select`). Over request/response every suspension is a full
+re-invocation HTTP round-trip (the runtime replays a longer journal from the top); over
+bidi the runtime streams the completion onto the open channel and the SDK resumes the
+parked fiber in place, no re-invoke. Bidi is also the only transport that can deliver
+**cancellation / signals** (V7) to a parked invocation at all. Choose bidi for
+correctness and suspension-heavy durable workflows; either transport is fine (Swoole is
+faster) for fire-and-forget stateless calls.
 
 ---
 

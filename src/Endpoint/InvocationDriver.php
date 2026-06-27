@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Endpoint;
 
+use Closure;
 use Fiber;
 use Psr\Log\LoggerInterface;
 use Qcodr\Restate\Sdk\Context\Clock;
@@ -147,6 +148,86 @@ final class InvocationDriver
             // (batched completions, or a completion plus the cancel), and each resumed
             // await may run straight on to the next whose result is already present; a
             // frame that does not make the current await resolvable still does not wake it.
+            $vm->notifyInput($chunk);
+            $park = $this->drainResolved($fiber, $park);
+        }
+
+        $io->close();
+    }
+
+    /**
+     * Runs the journal-replay phase and the handler's first execution slice in the
+     * calling fiber (instead of a separate `async()` task). Reads from the stream via
+     * `$readChunk()`, starts the handler fiber, and immediately drains any park whose
+     * result is already present in the journal.
+     *
+     * Returns null when the handler ran to completion in this slice — all output is
+     * already in the `OutputSink` the caller wired into `$vm`. Returns a two-element
+     * array `[Fiber, mixed $park]` when the handler is suspended on an unresolved park;
+     * the caller is responsible for routing late completions via {@see continueFromPark}.
+     *
+     * EOF before the journal is complete is treated as a silent close: nothing ran, so
+     * null is returned and the caller should emit an empty (or no) response body.
+     *
+     * @param Closure(): ?string $readChunk reads one inbound chunk; returns null at EOF
+     * @return array{0: Fiber<mixed, mixed, mixed, mixed>, 1: mixed}|null
+     */
+    public function tryStartInline(
+        StateMachine $vm,
+        ServiceDefinition $service,
+        HandlerDefinition $handler,
+        Closure $readChunk,
+    ): ?array {
+        // Phase 1: feed the journal until the VM can run.
+        while (!$vm->isReadyToExecute()) {
+            $chunk = $readChunk();
+            if ($chunk === null) {
+                // EOF before the journal was complete; nothing to run.
+                return null;
+            }
+            $vm->notifyInput($chunk);
+        }
+
+        // Phase 2: start the handler and drain any immediately-satisfiable parks.
+        $fiber = new Fiber(function () use ($service, $handler, $vm): void {
+            $this->invocationProcessor->process($service, $handler, $vm);
+        });
+
+        $park = $this->drainResolved($fiber, $fiber->start());
+
+        if ($fiber->isTerminated()) {
+            // Handler completed without any unresolved park in this slice.
+            return null;
+        }
+
+        return [$fiber, $park];
+    }
+
+    /**
+     * Continues an invocation that was left parked by {@see tryStartInline}. Reads
+     * completions/signals from `$io` (flush-before-read) and resumes the fiber for
+     * every await the arriving chunk satisfies, exactly as {@see driveStreaming} does
+     * in its own loop. Closes `$io` when the fiber terminates or EOF arrives.
+     *
+     * @param Fiber<mixed, mixed, mixed, mixed> $fiber
+     */
+    public function continueFromPark(
+        StateMachine $vm,
+        Fiber $fiber,
+        mixed $park,
+        StreamTransport $io,
+    ): void {
+        while (!$fiber->isTerminated()) {
+            $chunk = $io->read();
+            if ($chunk === null) {
+                $vm->notifyInputClosed();
+                if ($park instanceof ParkSignal) {
+                    $vm->writeSuspension($park->awaitTree);
+                }
+
+                break;
+            }
+
             $vm->notifyInput($chunk);
             $park = $this->drainResolved($fiber, $park);
         }

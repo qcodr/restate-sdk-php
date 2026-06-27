@@ -7,7 +7,7 @@
 INGRESS_URL ?= http://localhost:8080
 ADMIN_URL   ?= http://localhost:9070
 
-.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast infection bench bench-e2e check examples
+.PHONY: install test test-unit up wait down logs lint stan cs cs-fix sast infection bench bench-e2e bench-e2e-amp bench-e2e-compare check examples
 
 install:
 	composer install
@@ -49,9 +49,17 @@ infection:
 bench:
 	php benchmarks/micro.php
 
-# End-to-end load/latency/memory through Restate + Swoole (needs Docker).
+# End-to-end load/latency/memory through Restate (needs Docker). Swoole request/response
+# by default; `bench-e2e-amp` runs the amphp bidi transport; `bench-e2e-compare` runs
+# both against one runtime and prints them side by side.
 bench-e2e:
-	benchmarks/e2e/run.sh
+	TRANSPORT=swoole benchmarks/e2e/run.sh
+
+bench-e2e-amp:
+	TRANSPORT=amp benchmarks/e2e/run.sh
+
+bench-e2e-compare:
+	benchmarks/e2e/compare.sh
 
 # The local pre-commit gate: lint + SAST + unit tests.
 check: lint sast test-unit
@@ -69,13 +77,16 @@ wait:
 	done; \
 	echo "Restate did not become healthy in time" >&2; exit 1
 
-# Bring up the example services live (all examples on one endpoint) and register them.
+# Bring up the example services live (all examples on one endpoint, over true bidi
+# HTTP/2 via amphp) and register them. No `use_http_11`: bidi requires HTTP/2, which the
+# runtime negotiates against the amphp h2c host. The pinned 1.5.2 already serves bidi;
+# override with RESTATE_IMAGE=... for a newer runtime if needed.
 examples:
 	docker compose up -d --build restate examples-endpoint
 	$(MAKE) wait
 	@curl -fsS -X POST $(ADMIN_URL)/deployments \
 		-H 'content-type: application/json' \
-		-d '{"uri":"http://examples-endpoint:9080","use_http_11":true,"force":true}' >/dev/null \
+		-d '{"uri":"http://examples-endpoint:9080","force":true}' >/dev/null \
 		&& echo "Examples registered. Try: curl $(INGRESS_URL)/FanOut/fanOut"
 
 # --- Cross-SDK conformance (official restatedev/sdk-test-suite) -----------

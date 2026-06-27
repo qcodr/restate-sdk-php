@@ -25,8 +25,8 @@
         "vimeo/psalm": "^6.0"
     },
     "suggest": {
-        "amphp/http-server": "Required to run the bidirectional-streaming HTTP server (Qcodr\\Restate\\Sdk\\Server\\AmpStreamingServer).",
-        "ext-swoole": "Required to run the Swoole-based HTTP server (Qcodr\\Restate\\Sdk\\Server\\SwooleServer).",
+        "amphp/http-server": "Required to run the default bidirectional-streaming HTTP server (Qcodr\\Restate\\Sdk\\Server\\AmpStreamingServer).",
+        "ext-swoole": "Required to run the alternative request/response Swoole HTTP server (Qcodr\\Restate\\Sdk\\Server\\SwooleServer).",
         "ext-sodium": "Required for request identity verification (Qcodr\\Restate\\Sdk\\Endpoint\\Identity).",
         "open-telemetry/sdk": "Bridge Context::traceContext() into OpenTelemetry spans (see examples/tracing.php)."
     },

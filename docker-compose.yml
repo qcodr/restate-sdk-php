@@ -1,17 +1,51 @@
 services:
   restate:
-    image: docker.io/restatedev/restate:1.5.2
+    # Default pins 1.5.2 (last AVX2-free runtime) — it serves the bidi examples fine.
+    # Override for a newer runtime, e.g. V7 cancellation/signals over bidi needs >=1.7:
+    #   RESTATE_IMAGE=docker.io/restatedev/restate:1.7.0 docker compose up
+    image: ${RESTATE_IMAGE:-docker.io/restatedev/restate:1.5.2}
     ports:
       - "8080:8080"   # ingress
       - "9070:9070"   # admin
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Default: all example services over true bidi HTTP/2 (amphp AmpStreamingServer).
   examples-endpoint:
     build:
       context: .
-      dockerfile: docker/php/Dockerfile
+      dockerfile: docker/php-amp/Dockerfile
     command: php /app/examples/endpoint.php
+    expose:
+      - "9080"
+    depends_on:
+      - restate
+
+  # Benchmark endpoints (see benchmarks/e2e/run.sh). Each serves the same single
+  # BenchGreeter so the two transports can be compared head to head.
+  bench-endpoint-amp:
+    build:
+      context: .
+      dockerfile: docker/php-amp/Dockerfile
+    command: php /app/benchmarks/e2e/bench-endpoint-amp.php
+    # WORKER_NUM>1 pre-forks N event-loop workers (SO_REUSEPORT) to lift the
+    # single-process throughput ceiling; 1 (default) is a single event loop.
+    environment:
+      - WORKER_NUM=${WORKER_NUM:-1}
+    expose:
+      - "9080"
+    depends_on:
+      - restate
+
+  bench-endpoint-swoole:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: php /app/benchmarks/e2e/bench-endpoint.php
+    # WORKER_NUM=1 makes it transport-equal to the single-process amp endpoint;
+    # 0 (default) lets Swoole pre-fork max(2, cpu_num) workers (the worker_num sweep).
+    environment:
+      - WORKER_NUM=${WORKER_NUM:-0}
     expose:
       - "9080"
     depends_on:
