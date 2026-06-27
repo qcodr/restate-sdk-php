@@ -10,6 +10,7 @@ use Qcodr\Restate\Sdk\Endpoint\Endpoint;
 use Qcodr\Restate\Sdk\Endpoint\HttpRequest;
 use Qcodr\Restate\Sdk\Endpoint\ProtocolMode;
 use Qcodr\Restate\Sdk\Endpoint\RequestProcessor;
+use Qcodr\Restate\Sdk\Endpoint\StreamingInlineResult;
 use Qcodr\Restate\Sdk\Endpoint\StreamingInvocation;
 use Qcodr\Restate\Sdk\Endpoint\StreamingOutputSink;
 use Qcodr\Restate\Sdk\Protocol\Message\Value;
@@ -140,6 +141,47 @@ final class StreamingInlineTest extends TestCase
         self::assertNotContains(MessageType::Suspension, $this->frameTypes($transport->written()));
         self::assertSame('"inv-xyz"', $this->successValue($transport->written()));
         self::assertTrue($transport->isClosed());
+    }
+
+    public function testInlineCompletesEmptyWhenJournalEndsBeforeReady(): void
+    {
+        // The runtime hangs up before sending a full journal: tryStartInline reads null
+        // while the VM is not yet ready to execute, so the inline attempt completes with no
+        // output (the live server then returns an empty body). Covers the EOF-before-journal
+        // branch — the handler never runs.
+        [$processor, $target] = $this->resolve(new Greeter(), 'Greeter', 'greet');
+
+        $result = $processor->tryDriveStreamingInline($target, $this->chunkReader([])); // immediate EOF
+
+        self::assertTrue($result->completed);
+        self::assertSame('', $result->output);
+        self::assertNull($result->handlerFiber);
+        self::assertNull($result->vm);
+    }
+
+    public function testContinueFromParkClosesWhenResultCarriesNoFiber(): void
+    {
+        // Defensive guard: a parked result always carries a VM + fiber, but the fields are
+        // nullable; if mis-constructed without them the continuation must close the channel
+        // rather than dereference null. This exercises that guard directly.
+        $processor = new RequestProcessor(
+            Endpoint::builder()->bind(new Greeter())->build(),
+            transportCapability: ProtocolMode::BidiStream,
+        );
+        $result = new StreamingInlineResult(
+            completed: false,
+            output: '',
+            vm: null,
+            handlerFiber: null,
+            park: null,
+            switchSink: null,
+        );
+        $transport = new BufferedStreamTransport([]);
+
+        $processor->continueStreamingFromPark($result, $transport);
+
+        self::assertTrue($transport->isClosed());
+        self::assertSame('', $transport->written());
     }
 
     public function testParkedHandlerSuspendsGracefullyOnEofDuringContinuation(): void
