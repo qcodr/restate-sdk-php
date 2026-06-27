@@ -20,12 +20,18 @@ UpgradeWithNewInvocation · KafkaIngress · Ingress (header pass-through).
 
 A few tests are excluded with documented reasons in `exclusions.yaml` (`awaitAny`
 combinator edge cases the Rust SDK also excludes; per-handler raw serde; one fan-out
-ordering case; in-flight deployment upgrade).
+ordering case; in-flight deployment upgrade; V7 scoped concurrency).
 
-**Cancellation / KillInvocation** of *suspended* invocations now pass over the
-bidirectional (amp) transport against a service-protocol-**V7** runtime — `Cancellation`
-6/6, `KillInvocation` 1/1, with `ServiceToServiceCommunication` improving to 5/5. See the
-bidi run instructions below and `../docs/adr/0001-cancellation-over-bidirectional-streaming.md`.
+### Bidirectional (amp) transport on service protocol V7
+
+The `AmpStreamingServer` transport speaks service protocol **V7** (signals, signal-backed
+awakeables, named signals, the Future-based suspension/`AwaitingOn`). Against a V7-enabled
+runtime (`Dockerfile.restate-v7`) the `default` suite passes **48 / 49**, including
+`Cancellation` 6/6, `KillInvocation` 1/1, `Signals` 2/2, `Combinators` 9/9,
+`RunRetry` 3/3, `UserErrors` 10/10, and `ServiceToServiceCommunication` 5/5. The remaining
+exclusions are the same documented gaps as above plus `ServiceToServiceScopeConcurrency`
+(V7 scoped concurrency / virtual queues — not yet implemented). See the run instructions
+below and `../docs/adr/0001-cancellation-over-bidirectional-streaming.md`.
 
 ## Run it
 

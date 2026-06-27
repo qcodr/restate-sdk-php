@@ -16,6 +16,9 @@
 #  * CallOrdering.ordering — one fan-out ordering case needs concurrent non-blocking raw
 #    calls, which the proxy approximates with sequential awaited calls.
 #  * UpgradeWithInFlightInvocation — deployment upgrade while an invocation is in flight.
+#  * ServiceToServiceScopeConcurrency — V7 scoped-concurrency (call scope + limit key) is a
+#    distinct feature needing both SDK support and the runtime's experimental virtual-queues
+#    subsystem; not yet implemented.
 exclusions:
   "default":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
@@ -23,39 +26,46 @@ exclusions:
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "alwaysSuspending":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "singleThreadSinglePartition":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "threeNodes":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "threeNodesAlwaysSuspending":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "lazyState":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
   "persistedTimers":
     - "dev.restate.sdktesting.tests.Combinators.awakeableOrTimeoutUsingAwaitAny"
     - "dev.restate.sdktesting.tests.Combinators.firstSuccessfulCompletedAwakeable"
     - "dev.restate.sdktesting.tests.Ingress.rawHandler"
     - "dev.restate.sdktesting.tests.CallOrdering.ordering"
     - "dev.restate.sdktesting.tests.UpgradeWithInFlightInvocation.inFlightInvocation"
+    - "dev.restate.sdktesting.tests.ServiceToServiceScopeConcurrency.scopeAndLimitKeyArePropagatedOnServiceToServiceCalls"
