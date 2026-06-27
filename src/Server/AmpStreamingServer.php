@@ -7,6 +7,7 @@ namespace Qcodr\Restate\Sdk\Server;
 use Amp\ByteStream\ReadableIterableStream;
 use Amp\Http\HttpStatus;
 use Amp\Http\Server\DefaultErrorHandler;
+use Amp\Http\Server\Driver\DefaultHttpDriverFactory;
 use Amp\Http\Server\Request;
 use Amp\Http\Server\RequestHandler\ClosureRequestHandler;
 use Amp\Http\Server\Response;
@@ -52,6 +53,21 @@ use function Amp\trapSignal;
  */
 final class AmpStreamingServer
 {
+    /**
+     * Per-stream and whole-connection idle ceilings handed to amphp's HTTP/2 driver, in
+     * seconds. amphp defaults these to 15s / 60s, which is wrong for this transport: a
+     * Restate invocation legitimately keeps its bidi stream open and idle while the handler
+     * is parked awaiting a completion, a signal, or a cancel the runtime may deliver much
+     * later, and the runtime never half-closes the request (so amphp never `suspend()`s the
+     * stream timer) while its HTTP/2 keep-alive PINGs only refresh the connection timer.
+     * At 15s amphp would otherwise `releaseStream(..., "Closing stream due to inactivity")`,
+     * making the body read throw mid-invocation and silently dropping a pending cancel.
+     * Raised well above the runtime's own inactivity/abort windows so Restate governs
+     * suspension; a dead peer is still detected immediately by the socket closing.
+     */
+    private const STREAM_IDLE_TIMEOUT_SECONDS = 3600;
+    private const CONNECTION_IDLE_TIMEOUT_SECONDS = 3600;
+
     private readonly RequestProcessor $processor;
     private readonly LoggerInterface $logger;
 
@@ -85,9 +101,22 @@ final class AmpStreamingServer
             throw new RuntimeException("Port {$port} is out of range (0-65535)");
         }
 
-        // createForDirectAccess wires up the HTTP/2 driver (incl. h2c prior-knowledge),
-        // which the Restate runtime uses to open the bidirectional invocation stream.
-        $server = SocketHttpServer::createForDirectAccess($this->logger);
+        // The Restate runtime opens the invocation stream with HTTP/2 cleartext (h2c)
+        // PRIOR KNOWLEDGE — it writes the HTTP/2 connection preface straight onto the
+        // socket, with no TLS (so no ALPN) and no `Upgrade: h2c` handshake. amphp only
+        // honours that preface when its HTTP/1 driver is built with HTTP/2 upgrade allowed;
+        // the default createForDirectAccess factory leaves it off and answers the preface
+        // with `505 Unsupported version 2.0`. Enable it explicitly so the bidi stream is
+        // accepted (verified against a real runtime in the conformance suite).
+        $server = SocketHttpServer::createForDirectAccess(
+            $this->logger,
+            httpDriverFactory: new DefaultHttpDriverFactory(
+                $this->logger,
+                streamTimeout: self::STREAM_IDLE_TIMEOUT_SECONDS,
+                connectionTimeout: self::CONNECTION_IDLE_TIMEOUT_SECONDS,
+                allowHttp2Upgrade: true,
+            ),
+        );
         $server->expose(new InternetAddress($host, $port));
         $server->start(new ClosureRequestHandler($this->handleRequest(...)), new DefaultErrorHandler());
 

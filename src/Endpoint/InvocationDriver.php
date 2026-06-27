@@ -123,8 +123,10 @@ final class InvocationDriver
             $this->invocationProcessor->process($service, $handler, $vm);
         });
 
-        // Run to the first park (a ParkSignal) or straight to a terminal frame (null).
-        $park = $fiber->start();
+        // Run to the first park (a ParkSignal) or straight to a terminal frame, then drain
+        // any await already satisfiable from journal-buffered notifications before we ever
+        // block on the stream.
+        $park = $this->drainResolved($fiber, $fiber->start());
 
         while (!$fiber->isTerminated()) {
             $chunk = $io->read();
@@ -139,16 +141,40 @@ final class InvocationDriver
                 break;
             }
 
-            // Routes late completions/signals (and skips ack/control frames). Resume the
-            // fiber only once the parked await's own predicate is satisfied, otherwise
-            // keep feeding frames — a frame that does not make the await resolvable must
-            // not wake the handler prematurely.
+            // Routes late completions/signals (and skips ack/control frames), then resumes
+            // the fiber for every await this chunk satisfies — not just one — before
+            // blocking on the next read. A single chunk can carry several notifications
+            // (batched completions, or a completion plus the cancel), and each resumed
+            // await may run straight on to the next whose result is already present; a
+            // frame that does not make the current await resolvable still does not wake it.
             $vm->notifyInput($chunk);
-            if (!$park instanceof ParkSignal || ($park->isResolved)()) {
-                $park = $fiber->resume();
-            }
+            $park = $this->drainResolved($fiber, $park);
         }
 
         $io->close();
+    }
+
+    /**
+     * Resumes the fiber while the current park's awaited result is already present, so a
+     * single inbound chunk drives every await it satisfies before the driver blocks on the
+     * next read. Returns the park the fiber is left on, or null once it terminates.
+     *
+     * Each iteration advances `$park = $fiber->resume()` and re-tests the new park, so a
+     * resumed await either returns, throws (terminating the fiber), or re-parks on a
+     * still-unresolved await whose predicate is false — the loop always makes progress.
+     *
+     * `$park` is typed `mixed` because {@see \Fiber::start()}/{@see \Fiber::resume()} return
+     * mixed; the suspender only ever yields a {@see ParkSignal} and the fiber body returns
+     * void, so in practice the value is always `ParkSignal|null`.
+     *
+     * @param Fiber<mixed, mixed, mixed, mixed> $fiber
+     */
+    private function drainResolved(Fiber $fiber, mixed $park): mixed
+    {
+        while ($park instanceof ParkSignal && ($park->isResolved)()) {
+            $park = $fiber->resume();
+        }
+
+        return $park;
     }
 }

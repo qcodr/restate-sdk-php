@@ -7,6 +7,7 @@ namespace Qcodr\Restate\Sdk\Context;
 use InvalidArgumentException;
 use LogicException;
 use Psr\Log\LoggerInterface;
+use Qcodr\Restate\Sdk\Error\CancelledException;
 use Qcodr\Restate\Sdk\Error\TerminalException;
 use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
@@ -312,8 +313,16 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             }
         }
 
-        // No future is ready yet: request/response unwinds inside suspendAny(); streaming
-        // parks until the predicate holds, then the rescan below is guaranteed a winner.
+        // No future is ready yet. A pending cancel must surface as a 409 rather than
+        // (re-)suspend: in request/response this is the re-invocation carrying the CANCEL
+        // signal in the replayed journal, where suspending again would loop forever.
+        if ($this->vm->isCancelled()) {
+            throw new CancelledException();
+        }
+
+        // request/response unwinds inside suspendAny(); streaming parks until the
+        // predicate holds, then either the rescan below finds a winner or — if only the
+        // cancel guard fired — the invocation is cancelled.
         [$completions, $signals] = self::partitionFutures($futures);
         $this->vm->suspendAny(
             $completions,
@@ -327,6 +336,10 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
             }
         }
 
+        if ($this->vm->isCancelled()) {
+            throw new CancelledException();
+        }
+
         throw new LogicException('select resumed without a ready future');
     }
 
@@ -334,6 +347,11 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
     {
         $unresolved = self::unresolved($futures);
         if ($unresolved !== []) {
+            // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
+
             // Request/response unwinds inside suspendAll(); streaming parks until every
             // future is ready (or a cancel arrives), then the guard below holds.
             [$completions, $signals] = self::partitionFutures($unresolved);
@@ -345,6 +363,10 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         }
 
         if (!self::allReady($futures)) {
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
+
             throw new LogicException('awaitAll resumed without every future ready');
         }
 
@@ -359,10 +381,21 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         $isResolved = fn (): bool => self::anySucceededOrAllReady($futures) || $this->vm->isCancelled();
 
         if (!self::anySucceededOrAllReady($futures)) {
+            // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
+
             // Request/response unwinds inside suspendAnySucceeded(); streaming parks until
             // a future succeeds or every future has resolved, then the scan below settles.
             [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
             $this->vm->suspendAnySucceeded($completions, $signals, $isResolved);
+
+            // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
+            // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
         }
 
         $lastFailure = null;
@@ -391,10 +424,21 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         $isResolved = fn (): bool => self::anyFailedOrAllSucceeded($futures) || $this->vm->isCancelled();
 
         if (!self::anyFailedOrAllSucceeded($futures)) {
+            // A pending cancel surfaces as a 409 rather than (re-)suspend (see select()).
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
+
             // Request/response unwinds inside suspendAllSucceeded(); streaming parks until
             // one future fails or all succeed, then the scan below settles.
             [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
             $this->vm->suspendAllSucceeded($completions, $signals, $isResolved);
+
+            // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
+            // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
         }
 
         foreach ($futures as $future) {
@@ -405,6 +449,10 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         }
 
         if (!self::allReady($futures)) {
+            if ($this->vm->isCancelled()) {
+                throw new CancelledException();
+            }
+
             throw new LogicException('awaitAllSucceeded resumed without resolution');
         }
 

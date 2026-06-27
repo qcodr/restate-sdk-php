@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qcodr\Restate\Sdk\Tests\Unit\Endpoint;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Qcodr\Restate\Sdk\Endpoint\Endpoint;
 use Qcodr\Restate\Sdk\Endpoint\InvocationDriver;
@@ -19,6 +20,7 @@ use Qcodr\Restate\Sdk\Protocol\ServiceProtocolVersion;
 use Qcodr\Restate\Sdk\Service\HandlerDefinition;
 use Qcodr\Restate\Sdk\Service\ServiceDefinition;
 use Qcodr\Restate\Sdk\Tests\Support\BufferedStreamTransport;
+use Qcodr\Restate\Sdk\Tests\Support\Fixtures\AwakeableService;
 use Qcodr\Restate\Sdk\Tests\Support\Fixtures\CallOptionsService;
 use Qcodr\Restate\Sdk\Tests\Support\Fixtures\CancellationService;
 use Qcodr\Restate\Sdk\Tests\Support\Fixtures\Greeter;
@@ -246,6 +248,162 @@ final class InvocationDriverTest extends TestCase
         self::assertTrue($transport->isClosed());
     }
 
+    /**
+     * Each of the four combinators reached while a CANCEL signal is already pending must
+     * surface a terminal 409 — not re-suspend (the old bug streamed a SuspensionMessage)
+     * and not throw a misleading LogicException/TerminalException. The cancel rides in the
+     * same chunk as the journal, so it is in the signal table before the handler runs.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function combinatorHandlers(): array
+    {
+        return [
+            'awaitAny' => ['raceWhileCancelled'],
+            'select' => ['selectWhileCancelled'],
+            'awaitAll' => ['awaitAllWhileCancelled'],
+            'awaitAllSucceeded' => ['awaitAllSucceededWhileCancelled'],
+        ];
+    }
+
+    #[DataProvider('combinatorHandlers')]
+    public function testCombinatorWhileCancelledTerminatesWith409(string $handlerName): void
+    {
+        $transport = $this->drive(
+            new CancellationService(),
+            'CancellationService',
+            $handlerName,
+            [
+                // The CANCEL signal arrives in the same chunk as the journal, so it is
+                // pending before the combinator is reached; no further chunk follows.
+                (new JournalBuilder())->input('')->build() . (new JournalBuilder())->cancelSignal()->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output), 'a pending cancel must not re-suspend a combinator');
+        self::assertSame(CancelledException::CODE, $this->failure($output)->code, 'a cancelled combinator fails with HTTP 409');
+        self::assertTrue($transport->isClosed());
+    }
+
+    public function testCancelObservedMidStreamThenCombinatorDrains(): void
+    {
+        // The sleep await observes the cancel (CancelledException, caught by the handler);
+        // the handler then reaches a combinator that is still cancelled. The driver must
+        // drain that re-park (its predicate already holds) into the terminal 409 rather
+        // than block for a chunk that never comes and suspend.
+        $transport = $this->drive(
+            new CancellationService(),
+            'CancellationService',
+            'raceAfterObservedCancel',
+            [
+                (new JournalBuilder())->input('')->build(),
+                (new JournalBuilder())->cancelSignal()->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertSame(
+            [MessageType::SleepCommand, MessageType::CallCommand, MessageType::OutputCommand, MessageType::End],
+            $this->frameTypes($output),
+        );
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
+        self::assertSame(CancelledException::CODE, $this->failure($output)->code);
+    }
+
+    public function testCombinatorParkedThenCancelledMidStreamTerminatesWith409(): void
+    {
+        // No cancel at entry: the combinator parks, then a CANCEL arrives on the open
+        // stream. The post-suspend rescan must surface a 409 (not the misleading
+        // TerminalException the rescan used to throw when no future was ready).
+        $transport = $this->drive(
+            new CancellationService(),
+            'CancellationService',
+            'raceWhileCancelled',
+            [
+                (new JournalBuilder())->input('')->build(),
+                (new JournalBuilder())->cancelSignal()->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
+        self::assertSame(CancelledException::CODE, $this->failure($output)->code);
+    }
+
+    public function testBatchedCompletionsResolveTwoSequentialAwaitsInOneChunk(): void
+    {
+        // The runtime batches both the invocation-id (completion 1) and the call result
+        // (completion 2) into a single chunk. The handler awaits them in sequence; the
+        // driver must run both awaits off that one chunk, never suspending.
+        $transport = $this->drive(
+            new CallOptionsService(),
+            'CallOptionsService',
+            'callAwaitIdThenResult',
+            [
+                (new JournalBuilder())->input('')->build(),
+                (new JournalBuilder())->invocationIdCompletion(1, 'inv-xyz')->frames()
+                    . (new JournalBuilder())->callCompletion(2, '"call-result"')->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertSame([MessageType::CallCommand, MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
+        self::assertSame('"call-result"', $this->successValue($output));
+        // Both completions rode in read #1; no read past that batch occurred.
+        self::assertSame('', $transport->outputAtRead(2), 'the batched chunk resolved both awaits — no further read');
+    }
+
+    public function testAwakeableSignalOnOpenStreamResolvesParkedAwait(): void
+    {
+        // An awakeable emits no command; the handler parks on signal idx 17, which the
+        // runtime resolves by streaming a SignalNotification on the open channel.
+        $transport = $this->drive(
+            new AwakeableService(),
+            'AwakeableService',
+            'awaitOne',
+            [
+                (new JournalBuilder())->input('')->build(),
+                (new JournalBuilder())->awakeableSignal(17, '"resolved"')->frames(),
+            ],
+        );
+
+        $output = $transport->written();
+        self::assertSame([MessageType::OutputCommand, MessageType::End], $this->frameTypes($output));
+        self::assertNotContains(MessageType::Suspension, $this->frameTypes($output));
+        self::assertSame('"resolved"', $this->successValue($output));
+    }
+
+    public function testEofWhileParkedOnAwakeableSuspendsWaitingOnCancelAndSignal(): void
+    {
+        // No resolving signal arrives: parked on the awakeable (signal idx 17), an EOF
+        // suspends. The await tree must declare the CANCEL signal (idx 1) at the outer
+        // node and nest the awakeable signal (idx 17) — so the runtime re-invokes on
+        // either the awakeable resolution or a cancel.
+        $transport = $this->drive(
+            new AwakeableService(),
+            'AwakeableService',
+            'awaitOne',
+            [(new JournalBuilder())->input('')->build()],
+        );
+
+        $frames = MessageCodec::decodeAll($transport->written());
+        self::assertSame([MessageType::Suspension], \array_map(static fn ($f) => $f->type(), $frames));
+
+        $reader = new Reader($frames[0]->payload);
+        [$field] = $reader->readTag();
+        self::assertSame(4, $field, 'the suspension carries its await tree in field 4');
+        $outer = $this->decodeFuture($reader->readLengthDelimited());
+
+        self::assertSame([1], $outer['signals'], 'the outer node waits on the CANCEL signal');
+        self::assertCount(1, $outer['nested'], 'the awakeable await nests under the cancel guard');
+        $inner = $this->decodeFuture($outer['nested'][0]);
+        self::assertSame([17], $inner['signals'], 'the nested node waits on the awakeable signal idx 17');
+        self::assertSame([], $inner['completions']);
+    }
+
     private function frameOfType(string $output, MessageType $type): Frame
     {
         foreach (MessageCodec::decodeAll($output) as $frame) {
@@ -254,5 +412,52 @@ final class InvocationDriverTest extends TestCase
             }
         }
         self::fail("No {$type->name} frame in streamed output");
+    }
+
+    /**
+     * Decodes a {@see \Qcodr\Restate\Sdk\Protocol\Message\Future} payload, returning its
+     * leaf ids and the raw bytes of each nested future (mirrors the helper in
+     * {@see \Qcodr\Restate\Sdk\Tests\Unit\Vm\StateMachineTest}).
+     *
+     * @return array{completions: list<int>, signals: list<int>, nested: list<string>}
+     */
+    private function decodeFuture(string $payload): array
+    {
+        $reader = new Reader($payload);
+        $completions = [];
+        $signals = [];
+        $nested = [];
+        while (!$reader->atEnd()) {
+            [$field, $wire] = $reader->readTag();
+            switch ($field) {
+                case 1:
+                    $completions = $this->unpackVarints($reader->readLengthDelimited());
+                    break;
+                case 2:
+                    $signals = $this->unpackVarints($reader->readLengthDelimited());
+                    break;
+                case 4:
+                    $nested[] = $reader->readLengthDelimited();
+                    break;
+                default:
+                    $reader->skip($wire);
+            }
+        }
+
+        return ['completions' => $completions, 'signals' => $signals, 'nested' => $nested];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function unpackVarints(string $packed): array
+    {
+        $reader = new Reader($packed);
+        $values = [];
+        while (!$reader->atEnd()) {
+            $values[] = $reader->readVarint();
+        }
+
+        return $values;
     }
 }

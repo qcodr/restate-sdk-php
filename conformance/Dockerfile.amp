@@ -1,0 +1,36 @@
+# Cross-SDK conformance test-services image, BIDIRECTIONAL variant: plain PHP 8.4 CLI +
+# amphp/http-server (NO ext-swoole), serving the conformance services over HTTP/2 cleartext
+# (h2c) so the Restate runtime opens a true bidirectional invocation stream. Built by the
+# `conformance-amp` make target and driven by restatedev/e2e (sdk-tests.jar).
+#
+# The request/response Swoole conformance image lives at conformance/Dockerfile and is
+# unaffected. Mirrors docker/php-amp/Dockerfile but ships the conformance services.
+FROM php:8.4-cli
+
+# git + unzip let Composer extract dist archives (the slim php:8.4-cli image ships neither,
+# unlike phpswoole/swoole). ext-pcntl provides the signal handling AmpStreamingServer::listen()
+# traps for graceful shutdown; mbstring + sodium are already bundled in php:8.4-cli, and amphp
+# uses non-blocking sockets so no event-loop extension is required.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && docker-php-ext-install pcntl
+
+WORKDIR /app
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# amphp/http-server is a require-dev / suggest dependency, so dev deps are required here
+# (--no-dev would skip it). composer.lock is gitignored for a library and excluded by
+# .dockerignore, so — like conformance/Dockerfile — only composer.json is copied and
+# Composer resolves the stable deps fresh.
+COPY composer.json ./
+RUN composer install --no-interaction --no-progress --optimize-autoloader
+
+COPY src ./src
+COPY conformance ./conformance
+RUN composer dump-autoload --optimize
+
+EXPOSE 9080
+
+CMD ["php", "conformance/main-amp.php"]

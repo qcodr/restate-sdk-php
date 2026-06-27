@@ -145,6 +145,23 @@ final class JournalBuilder
         return $this;
     }
 
+    /**
+     * Adds a signal notification carrying a value (notification field 5), as the runtime
+     * delivers when an awakeable is resolved by another invocation. Awakeable signals
+     * start at idx 17 (built-in signals reserve 0..16); mirrors {@see cancelSignal} but
+     * with a value payload instead of a void cancel.
+     */
+    public function awakeableSignal(int $signalId, string $value): self
+    {
+        $payload = (new Writer())
+            ->writeUint32Present(2, $signalId)
+            ->writeMessage(5, (new Writer())->writeBytes(1, $value)->toString())
+            ->toString();
+        $this->journal[] = [MessageType::SignalNotification, $payload];
+
+        return $this;
+    }
+
     public function runCompletion(int $completionId, string $value): self
     {
         $payload = (new Writer())
