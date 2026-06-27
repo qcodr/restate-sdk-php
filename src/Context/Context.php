@@ -62,6 +62,17 @@ interface Context
      */
     public function run(string $name, callable $action, ?RunOptions $options = null): mixed;
 
+    /**
+     * Executes a side effect durably WITHOUT awaiting it, returning a future that
+     * resolves to the journaled result. Like {@see run} the closure runs once and its
+     * result is persisted, but control returns immediately so the run can be composed
+     * concurrently (e.g. raced via {@see select} / {@see awaitAll} against timers,
+     * calls or signals). Await the returned future to obtain the value.
+     *
+     * @param callable():mixed $action
+     */
+    public function runAsync(string $name, callable $action): DurableFuture;
+
     /** Suspends the invocation for the given duration using a durable timer. */
     public function sleep(float $seconds): void;
 
@@ -298,6 +309,20 @@ interface Context
     public function resolveAwakeable(string $id, mixed $value = null): void;
 
     public function rejectAwakeable(string $id, string $message): void;
+
+    /**
+     * Creates a future that resolves when a named signal is delivered to THIS
+     * invocation. The signal is addressed by the chosen `$name`: another invocation
+     * resolves it via {@see resolveSignal} (or rejects it via {@see rejectSignal})
+     * targeting this invocation's id and the same name.
+     */
+    public function createSignal(string $name): DurableFuture;
+
+    /** Resolves a named signal on another invocation with a value. */
+    public function resolveSignal(string $invocationId, string $name, mixed $value = null): void;
+
+    /** Rejects a named signal on another invocation with a terminal failure reason. */
+    public function rejectSignal(string $invocationId, string $name, string $reason): void;
 
     /** Deterministic, replay-stable randomness seeded by the runtime. */
     public function random(): ContextRand;

@@ -117,7 +117,7 @@ final class StreamingStateMachineTest extends TestCase
         // is resumed directly (no driver), so a trivial always-true closure suffices.
         $finished = false;
         $fiber = new Fiber(static function () use ($vm, &$finished): void {
-            $vm->suspendAny([2, 4], [], static fn (): bool => true);
+            $vm->suspendAny([2, 4], [], [], static fn (): bool => true);
             $finished = true;
         });
 

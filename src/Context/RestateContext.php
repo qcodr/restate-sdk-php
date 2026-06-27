@@ -12,6 +12,8 @@ use Qcodr\Restate\Sdk\Protocol\ErrorBehavior;
 use Qcodr\Restate\Sdk\Protocol\Message\CompleteAwakeableCommand;
 use Qcodr\Restate\Sdk\Protocol\Message\Failure;
 use Qcodr\Restate\Sdk\Protocol\Message\Header;
+use Qcodr\Restate\Sdk\Protocol\Message\SendSignalCommand;
+use Qcodr\Restate\Sdk\Protocol\Message\Value;
 use Qcodr\Restate\Sdk\Serde\Serde;
 use Qcodr\Restate\Sdk\Serde\SerializationException;
 use Qcodr\Restate\Sdk\Vm\InvocationInput;
@@ -123,6 +125,45 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         $this->vm->proposeRunCompletionSuccess($completionId, $serialized);
 
         return $this->completionFuture($completionId)->await();
+    }
+
+    public function runAsync(string $name, callable $action): DurableFuture
+    {
+        $completionId = $this->vm->sysRun($name);
+
+        // Replay: the result is already journaled, so the closure must NOT re-run.
+        if ($this->vm->isCompletionReady($completionId)) {
+            return $this->completionFuture($completionId);
+        }
+
+        try {
+            $result = $action();
+        } catch (TerminalException $e) {
+            $this->vm->proposeRunCompletionFailure(
+                $completionId,
+                new Failure($e->statusCode(), $e->getMessage(), $e->metadata),
+            );
+
+            return $this->completionFuture($completionId);
+        }
+
+        try {
+            $serialized = $this->serde->serialize($result);
+        } catch (SerializationException $e) {
+            // A non-serializable result fails terminally rather than re-running forever
+            // (see run()): the RunCommand is journaled, so a missing completion would
+            // re-execute the closure on every attempt.
+            $this->vm->proposeRunCompletionFailure(
+                $completionId,
+                new Failure(TerminalException::DEFAULT_CODE, 'run result is not serializable: ' . $e->getMessage()),
+            );
+
+            return $this->completionFuture($completionId);
+        }
+
+        $this->vm->proposeRunCompletionSuccess($completionId, $serialized);
+
+        return $this->completionFuture($completionId);
     }
 
     /**
@@ -322,10 +363,11 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
         // request/response unwinds inside suspendAny(); streaming parks until the
         // predicate holds, then either the rescan below finds a winner or — if only the
         // cancel guard fired — the invocation is cancelled.
-        [$completions, $signals] = self::partitionFutures($futures);
+        [$completions, $signals, $namedSignals] = self::partitionFutures($futures);
         $this->vm->suspendAny(
             $completions,
             $signals,
+            $namedSignals,
             fn (): bool => self::anyReady($futures) || $this->vm->isCancelled(),
         );
 
@@ -353,10 +395,11 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
 
             // Request/response unwinds inside suspendAll(); streaming parks until every
             // future is ready (or a cancel arrives), then the guard below holds.
-            [$completions, $signals] = self::partitionFutures($unresolved);
+            [$completions, $signals, $namedSignals] = self::partitionFutures($unresolved);
             $this->vm->suspendAll(
                 $completions,
                 $signals,
+                $namedSignals,
                 fn (): bool => self::allReady($futures) || $this->vm->isCancelled(),
             );
         }
@@ -387,8 +430,8 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
 
             // Request/response unwinds inside suspendAnySucceeded(); streaming parks until
             // a future succeeds or every future has resolved, then the scan below settles.
-            [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
-            $this->vm->suspendAnySucceeded($completions, $signals, $isResolved);
+            [$completions, $signals, $namedSignals] = self::partitionFutures(self::unresolved($futures));
+            $this->vm->suspendAnySucceeded($completions, $signals, $namedSignals, $isResolved);
 
             // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
             // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
@@ -430,8 +473,8 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
 
             // Request/response unwinds inside suspendAllSucceeded(); streaming parks until
             // one future fails or all succeed, then the scan below settles.
-            [$completions, $signals] = self::partitionFutures(self::unresolved($futures));
-            $this->vm->suspendAllSucceeded($completions, $signals, $isResolved);
+            [$completions, $signals, $namedSignals] = self::partitionFutures(self::unresolved($futures));
+            $this->vm->suspendAllSucceeded($completions, $signals, $namedSignals, $isResolved);
 
             // Streaming resumed: a cancel that woke the park surfaces as a 409 (cancel
             // wins the race here, exactly as StateMachine::awaitCompletion does post-park).
@@ -538,6 +581,34 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
     {
         $this->vm->sysCompleteAwakeable(
             CompleteAwakeableCommand::reject($id, new Failure(TerminalException::DEFAULT_CODE, $message)),
+        );
+    }
+
+    public function createSignal(string $name): DurableFuture
+    {
+        // A named signal is addressed by its user-chosen name, so nothing is allocated
+        // on the VM (unlike an awakeable, which reserves a signal index): the future just
+        // awaits the named-signal table, filled when another invocation sends to it.
+        return new DurableFuture(
+            $this->vm,
+            0,
+            isSignal: true,
+            decoder: fn (string $bytes): mixed => $this->serde->deserialize($bytes),
+            signalName: $name,
+        );
+    }
+
+    public function resolveSignal(string $invocationId, string $name, mixed $value = null): void
+    {
+        $this->vm->sysSendSignal(
+            SendSignalCommand::resolveNamed($invocationId, $name, new Value($this->serde->serialize($value))),
+        );
+    }
+
+    public function rejectSignal(string $invocationId, string $name, string $reason): void
+    {
+        $this->vm->sysSendSignal(
+            SendSignalCommand::rejectNamed($invocationId, $name, new Failure(TerminalException::DEFAULT_CODE, $reason)),
         );
     }
 
@@ -735,23 +806,30 @@ final class RestateContext implements WorkflowContext, SharedWorkflowContext
     }
 
     /**
+     * Splits futures into the three await-tree buckets the combinator suspends on: a
+     * named signal awaits by name (populating `waitingNamedSignals`), an awakeable by
+     * its signal index, and everything else by its completion id.
+     *
      * @param array<array-key, DurableFuture> $futures
      *
-     * @return array{0: list<int>, 1: list<int>} [completionIds, signalIds]
+     * @return array{0: list<int>, 1: list<int>, 2: list<string>} [completionIds, signalIds, namedSignals]
      */
     private static function partitionFutures(array $futures): array
     {
         $completions = [];
         $signals = [];
+        $namedSignals = [];
         foreach ($futures as $future) {
-            if ($future->isSignal()) {
+            if ($future->isNamedSignal()) {
+                $namedSignals[] = (string) $future->signalName();
+            } elseif ($future->isSignal()) {
                 $signals[] = $future->id();
             } else {
                 $completions[] = $future->id();
             }
         }
 
-        return [$completions, $signals];
+        return [$completions, $signals, $namedSignals];
     }
 
     /**

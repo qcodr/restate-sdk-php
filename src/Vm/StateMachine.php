@@ -85,6 +85,8 @@ final class StateMachine
     private array $completions = [];
     /** @var array<int, Notification> signals keyed by signal index */
     private array $signals = [];
+    /** @var array<string, Notification> named signals keyed by their user-chosen name */
+    private array $namedSignals = [];
     /**
      * Invocation-id completion ids of the calls this handler has issued, in order. On
      * cancellation they are used to propagate the cancel to those child invocations
@@ -186,6 +188,7 @@ final class StateMachine
         $input = null;
         $completions = [];
         $signals = [];
+        $namedSignals = [];
         $commandTypes = [];
 
         while ($consumed < $start->knownEntries) {
@@ -197,7 +200,7 @@ final class StateMachine
 
                 return; // need more bytes
             }
-            $this->classifyJournalFrame($frame, $knownCommands, $input, $completions, $signals, $commandTypes);
+            $this->classifyJournalFrame($frame, $knownCommands, $input, $completions, $signals, $namedSignals, $commandTypes);
             $consumed++;
         }
 
@@ -208,6 +211,7 @@ final class StateMachine
         $this->knownCommands = $knownCommands;
         $this->completions = $completions;
         $this->signals = $signals;
+        $this->namedSignals = $namedSignals;
         $this->journalCommandTypes = $commandTypes;
         $this->parsed = true;
         // Drop the (up to 64 MB) parsed journal; keep only any bytes past it. In
@@ -236,6 +240,7 @@ final class StateMachine
                     Notification::decode($frame->payload),
                     $this->completions,
                     $this->signals,
+                    $this->namedSignals,
                 );
             } elseif ($type === MessageType::ProposeRunCompletionAck) {
                 // The runtime confirmed a proposed run; resolve it from the stashed value.
@@ -264,9 +269,10 @@ final class StateMachine
     /**
      * @param int               $knownCommands by-ref command counter
      * @param InputCommand|null  $input         by-ref captured input command
-     * @param array<int, Notification> $completions  by-ref
-     * @param array<int, Notification> $signals      by-ref
-     * @param list<MessageType>        $commandTypes by-ref, appended per command frame
+     * @param array<int, Notification>    $completions  by-ref
+     * @param array<int, Notification>    $signals      by-ref
+     * @param array<string, Notification> $namedSignals by-ref
+     * @param list<MessageType>           $commandTypes by-ref, appended per command frame
      */
     private function classifyJournalFrame(
         Frame $frame,
@@ -274,6 +280,7 @@ final class StateMachine
         ?InputCommand &$input,
         array &$completions,
         array &$signals,
+        array &$namedSignals,
         array &$commandTypes,
     ): void {
         $type = $frame->type();
@@ -291,7 +298,7 @@ final class StateMachine
             return;
         }
         if ($type !== null && $type->isNotification()) {
-            $this->routeNotification(Notification::decode($frame->payload), $completions, $signals);
+            $this->routeNotification(Notification::decode($frame->payload), $completions, $signals, $namedSignals);
 
             return;
         }
@@ -300,13 +307,26 @@ final class StateMachine
     }
 
     /**
-     * @param array<int, Notification> $completions by-ref
-     * @param array<int, Notification> $signals     by-ref
+     * Routes a decoded notification into its table. The id fields are a protocol oneof —
+     * a completion id, a built-in/awakeable signal index, or a user-chosen signal name —
+     * so exactly one branch applies. Named signals (signal_name set) are keyed by name
+     * rather than index, since the receive side addresses them by the name another
+     * invocation sent to.
+     *
+     * @param array<int, Notification>    $completions  by-ref
+     * @param array<int, Notification>    $signals      by-ref
+     * @param array<string, Notification> $namedSignals by-ref
      */
-    private function routeNotification(Notification $notification, array &$completions, array &$signals): void
-    {
+    private function routeNotification(
+        Notification $notification,
+        array &$completions,
+        array &$signals,
+        array &$namedSignals,
+    ): void {
         if ($notification->completionId !== null) {
             $completions[$notification->completionId] = $notification;
+        } elseif ($notification->signalName !== null) {
+            $namedSignals[$notification->signalName] = $notification;
         } elseif ($notification->signalId !== null) {
             $signals[$notification->signalId] = $notification;
         }
@@ -583,6 +603,17 @@ final class StateMachine
         $this->recordCommand($command);
     }
 
+    /**
+     * Sends a named signal to another invocation (resolve or reject), journaling the
+     * command. Mirrors {@see sysCompleteAwakeable}: the {@see SendSignalCommand} carries
+     * the target invocation id, the signal name and the value/failure result.
+     */
+    public function sysSendSignal(SendSignalCommand $command): void
+    {
+        $this->ensureParsed();
+        $this->recordCommand($command);
+    }
+
     /** Cancels another invocation by sending it the built-in CANCEL signal. */
     public function sysCancel(string $invocationId): void
     {
@@ -706,18 +737,56 @@ final class StateMachine
         return $this->signals[$signalId];
     }
 
+    public function isNamedSignalReady(string $name): bool
+    {
+        return isset($this->namedSignals[$name]);
+    }
+
+    /** Returns the named signal if ready, otherwise parks (or fails if cancelled). Mirrors {@see awaitSignal}. */
+    public function awaitNamedSignal(string $name): Notification
+    {
+        if (isset($this->namedSignals[$name])) {
+            return $this->namedSignals[$name];
+        }
+        if ($this->isCancelled()) {
+            $this->raiseCancellation();
+        }
+
+        $this->parkOn(
+            Future::forNamedSignal($name),
+            fn (): bool => isset($this->namedSignals[$name]) || $this->isCancelled(),
+        );
+
+        if ($this->isCancelled()) {
+            $this->raiseCancellation(); // cancel won the race
+        }
+
+        return $this->peekNamedSignal($name); // the driver guarantees its presence
+    }
+
+    /** Reads a ready named signal without consuming it (non-destructive; see {@see peekSignal}). */
+    public function peekNamedSignal(string $name): Notification
+    {
+        if (!isset($this->namedSignals[$name])) {
+            throw new ProtocolException("Named signal {$name} is not available");
+        }
+
+        return $this->namedSignals[$name];
+    }
+
     /**
      * Parks awaiting the first of several results to complete (race semantics).
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved    the combinator's readiness predicate, supplied
      *                                       by the caller; the streaming driver resumes only
      *                                       once it holds
      */
-    public function suspendAny(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAny(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstCompleted), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::FirstCompleted), $isResolved);
     }
 
     /**
@@ -725,11 +794,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAll(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAll(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllCompleted), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::AllCompleted), $isResolved);
     }
 
     /**
@@ -739,11 +809,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAnySucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAnySucceeded(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::FirstSucceededOrAllFailed), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::FirstSucceededOrAllFailed), $isResolved);
     }
 
     /**
@@ -753,11 +824,12 @@ final class StateMachine
      *
      * @param list<int>       $completionIds
      * @param list<int>       $signalIds
+     * @param list<string>    $namedSignals
      * @param Closure(): bool $isResolved
      */
-    public function suspendAllSucceeded(array $completionIds, array $signalIds, Closure $isResolved): void
+    public function suspendAllSucceeded(array $completionIds, array $signalIds, array $namedSignals, Closure $isResolved): void
     {
-        $this->parkOn(new Future($completionIds, $signalIds, [], [], CombinatorType::AllSucceededOrFirstFailed), $isResolved);
+        $this->parkOn(new Future($completionIds, $signalIds, $namedSignals, [], CombinatorType::AllSucceededOrFirstFailed), $isResolved);
     }
 
     /**

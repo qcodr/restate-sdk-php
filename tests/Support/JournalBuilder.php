@@ -162,6 +162,42 @@ final class JournalBuilder
         return $this;
     }
 
+    /**
+     * Adds a named-signal notification carrying a value: signal_name (field 3) plus a
+     * value (field 5), as the runtime delivers when another invocation sends to
+     * (targetInvocationId, name). Mirrors {@see awakeableSignal} but keyed by name
+     * instead of signal index.
+     */
+    public function namedSignal(string $name, string $value): self
+    {
+        $payload = (new Writer())
+            ->writeStringPresent(3, $name)
+            ->writeMessage(5, (new Writer())->writeBytes(1, $value)->toString())
+            ->toString();
+        $this->journal[] = [MessageType::SignalNotification, $payload];
+
+        return $this;
+    }
+
+    /**
+     * Adds a named-signal notification carrying a {@see \Qcodr\Restate\Sdk\Protocol\Message\Failure}
+     * (field 6), as the runtime delivers when a named signal is rejected.
+     */
+    public function failedNamedSignal(string $name, string $message, int $code = 500): self
+    {
+        $failure = (new Writer())
+            ->writeUint32(1, $code)
+            ->writeString(2, $message)
+            ->toString();
+        $payload = (new Writer())
+            ->writeStringPresent(3, $name)
+            ->writeMessage(6, $failure)
+            ->toString();
+        $this->journal[] = [MessageType::SignalNotification, $payload];
+
+        return $this;
+    }
+
     public function runCompletion(int $completionId, string $value): self
     {
         $payload = (new Writer())
