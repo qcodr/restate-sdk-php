@@ -124,18 +124,6 @@ final class StateMachine
         return $this->version;
     }
 
-    /**
-     * Per-invocation tag for the RESTATE_STREAM_DEBUG wire trace: the StateMachine object
-     * id (unique per invocation in the process) plus the trailing bytes of the runtime
-     * invocation id (Restate ids share a leading prefix, so only the suffix distinguishes).
-     */
-    public function debugInvocationId(): string
-    {
-        $inv = $this->start !== null ? \substr(\bin2hex($this->start->id), -12) : '?';
-
-        return \spl_object_id($this) . ':' . $inv;
-    }
-
     // --- Input bootstrapping ---
 
     public function notifyInput(string $bytes): void
@@ -886,9 +874,6 @@ final class StateMachine
 
     private function appendOutput(OutgoingMessage $message): void
     {
-        if (\getenv('RESTATE_STREAM_DEBUG') !== false) {
-            \fwrite(\STDERR, \sprintf("[vm %s] write %s\n", $this->debugInvocationId(), $message->messageType()->name));
-        }
         $this->sink->write(MessageCodec::encode($message));
     }
 

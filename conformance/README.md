@@ -65,8 +65,5 @@ java -jar build/sdk-tests.jar run \
   --image-pull-policy=CACHED --report-dir=build/conformance-amp-report --sequential
 ```
 
-Set `RESTATE_STREAM_DEBUG=1` on the service container (`--service-container-env-file`) for a
-per-invocation wire trace from the streaming driver.
-
 After a run, `build/conformance-report/<ts>/exclusions.new.yaml` lists everything that
 failed/was skipped — copy entries into `exclusions.yaml` to baseline new gaps.

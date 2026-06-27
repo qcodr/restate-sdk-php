@@ -127,14 +127,12 @@ final class InvocationDriver
         // any await already satisfiable from journal-buffered notifications before we ever
         // block on the stream.
         $park = $this->drainResolved($fiber, $fiber->start());
-        $this->trace($vm, 'started', $park);
 
         while (!$fiber->isTerminated()) {
             $chunk = $io->read();
             if ($chunk === null) {
                 // EOF before the awaited result arrived: suspend gracefully so the
                 // runtime re-invokes us later with the completion in the journal.
-                $this->trace($vm, 'read EOF', $park);
                 $vm->notifyInputClosed();
                 if ($park instanceof ParkSignal) {
                     $vm->writeSuspension($park->awaitTree);
@@ -150,33 +148,10 @@ final class InvocationDriver
             // await may run straight on to the next whose result is already present; a
             // frame that does not make the current await resolvable still does not wake it.
             $vm->notifyInput($chunk);
-            $this->trace($vm, 'read ' . \strlen($chunk) . 'B', $park);
             $park = $this->drainResolved($fiber, $park);
         }
 
-        $this->trace($vm, $fiber->isTerminated() ? 'terminated' : 'suspended', $park);
         $io->close();
-    }
-
-    /**
-     * Wire trace gated by the RESTATE_STREAM_DEBUG env var: one line per driver step with
-     * the cancel-table state and the current park predicate, written to stderr (which the
-     * conformance harness captures). No-op (a single getenv) in production.
-     */
-    private function trace(StateMachine $vm, string $event, mixed $park): void
-    {
-        if (\getenv('RESTATE_STREAM_DEBUG') === false) {
-            return;
-        }
-
-        $resolved = $park instanceof ParkSignal ? (($park->isResolved)() ? 'Y' : 'N') : '-';
-        \fwrite(\STDERR, \sprintf(
-            "[stream %s] %-12s cancelled=%s parkResolved=%s\n",
-            $vm->debugInvocationId(),
-            $event,
-            $vm->isCancelled() ? 'Y' : 'N',
-            $resolved,
-        ));
     }
 
     /**
