@@ -89,37 +89,46 @@ examples:
 		-d '{"uri":"http://examples-endpoint:9080","force":true}' >/dev/null \
 		&& echo "Examples registered. Try: curl $(INGRESS_URL)/FanOut/fanOut"
 
-# --- Cross-SDK conformance (official restatedev/sdk-test-suite) -----------
-# Pins Restate 1.5.2 (last AVX2-free runtime); the PHP image is tagged localhost/
-# so the suite uses it from local cache instead of pulling.
-SUITE_VERSION   ?= v3.4
-SUITE_JAR       ?= build/restate-sdk-test-suite.jar
-SUITE_URL       := https://github.com/restatedev/sdk-test-suite/releases/download/$(SUITE_VERSION)/restate-sdk-test-suite.jar
-RESTATE_IMAGE   ?= docker.io/restatedev/restate:1.5.2
-PHP_TS_IMAGE    ?= localhost/restatedev/php-test-services:latest
-TEST_SUITE      ?= default
-EXCLUSIONS      ?= conformance/exclusions.yaml
-REPORT_DIR      ?= build/conformance-report
+# --- Cross-SDK conformance (official restatedev/e2e sdk-tests) ------------
+# The primary path runs the actively-maintained restatedev/e2e suite against the
+# bidi (amphp) transport on a V7-enabled runtime — the SDK's default transport,
+# where Cancellation / KillInvocation / Signals pass. Needs JDK >= 21 and an AVX2
+# host (Restate >= 1.6). The archived sdk-test-suite v3.4 + Restate 1.5.2 offline
+# fallback for AVX2-free hosts is documented in conformance/README.md.
+SUITE_VERSION    ?= v2.2
+SUITE_JAR        ?= build/sdk-tests.jar
+SUITE_URL        := https://github.com/restatedev/e2e/releases/download/$(SUITE_VERSION)/sdk-tests.jar
+JAVA             ?= java
+RESTATE_V7_IMAGE ?= localhost/restatedev/restate-v7:latest
+PHP_TS_IMAGE     ?= localhost/restatedev/php-amp-test-services:latest
+TEST_SUITE       ?= default
+EXCLUSIONS       ?= conformance/exclusions.yaml
+REPORT_DIR       ?= build/conformance-report
 
 .PHONY: conformance conformance-image conformance-jar conformance-run
 
 conformance-jar:
 	@test -f $(SUITE_JAR) || (mkdir -p $(dir $(SUITE_JAR)) && curl -fSL -o $(SUITE_JAR) $(SUITE_URL))
 
+# Build the V7-enabled runtime (stock Restate + the experimental-protocol-v7 flag) and the
+# bidi (amphp) test-services image. Both are tagged localhost/ so the suite uses them from
+# cache (--image-pull-policy=CACHED) instead of pulling.
 conformance-image:
-	docker build -f conformance/Dockerfile -t $(PHP_TS_IMAGE) .
+	docker build -f conformance/Dockerfile.restate-v7 -t $(RESTATE_V7_IMAGE) .
+	docker build -f conformance/Dockerfile.amp -t $(PHP_TS_IMAGE) .
 
-# Full run: download suite, build image, run the chosen config(s).
+# Full run: download suite, build the runtime + service images, run the chosen config(s).
 conformance: conformance-jar conformance-image conformance-run
 
 conformance-run:
-	java -jar $(SUITE_JAR) run \
-		--restate-container-image=$(RESTATE_IMAGE) \
+	$(JAVA) -jar $(SUITE_JAR) run \
+		--restate-container-image=$(RESTATE_V7_IMAGE) \
+		--service-container-image=$(PHP_TS_IMAGE) \
 		--test-suite=$(TEST_SUITE) \
 		--sequential \
 		$(if $(wildcard $(EXCLUSIONS)),--exclusions-file=$(EXCLUSIONS),) \
-		--report-dir=$(REPORT_DIR) \
-		$(PHP_TS_IMAGE)
+		--image-pull-policy=CACHED \
+		--report-dir=$(REPORT_DIR)
 	@echo "Report + exclusions.new.yaml under $(REPORT_DIR)/"
 
 logs:

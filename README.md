@@ -291,17 +291,19 @@ composer test          # vendor/bin/phpunit --testsuite unit
 ```
 
 End-to-end verification is the **official cross-SDK conformance suite**
-([`restatedev/sdk-test-suite`](https://github.com/restatedev/sdk-test-suite)) — the
-same battery every Restate SDK runs. It boots a real Restate runtime + a PHP image of
-the standard test-services and drives them:
+([`restatedev/e2e`](https://github.com/restatedev/e2e/tree/main/sdk-tests)) — the same
+battery every Restate SDK runs. It boots a real Restate runtime + a PHP image of the
+standard test-services and drives them (needs JDK ≥ 21 + an AVX2 host):
 
 ```bash
-make conformance               # downloads the suite, builds the image, runs `default`
+make conformance               # downloads the suite, builds the images, runs `default`
 make conformance TEST_SUITE=all
 ```
 
-The `default` config passes **30/30** (8 documented exclusions). See
-[`conformance/README.md`](conformance/README.md).
+The `default` config passes **48 / 49** over the bidi (amphp) transport on a V7-enabled
+runtime — `Cancellation` 6/6, `KillInvocation` 1/1, `Signals` 2/2 included. It also runs
+in CI ([`conformance.yml`](.github/workflows/conformance.yml)); an AVX2-free offline
+fallback is documented in [`conformance/README.md`](conformance/README.md).
 
 To try the example services live by hand:
 
